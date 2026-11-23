@@ -55,7 +55,7 @@ try {
     calls.push([req.method(),url.pathname]);
     let json;
     if (url.pathname === '/api/ops/whoami') json={authorized:true};
-    else if (url.pathname === '/api/config') json={enabled:true,durationMinutes:30,countries:['FR','BR']};
+    else if (url.pathname === '/api/config') json={enabled:true,durationMinutes:15,countries:['FR','BR']};
     else if (url.pathname === '/api/ops/invites') {
       assert.deepEqual(req.postDataJSON(),{country:'BR',durationMinutes:40});
       json={reference,invite:reference+'.'+'2'.repeat(64),expiresAt:Date.now()+60000};

@@ -300,7 +300,7 @@ try {
     el('country').append(option);
   }
   el('issue').hidden = !config.enabled;
-  el('minutes').placeholder = String(config.durationMinutes || 30);
+  el('minutes').placeholder = String(config.durationMinutes || 15);
   if (!config.enabled) el('access').textContent = 'Recruitment is closed. Existing records can still be retrieved and erased.';
 } catch {
   el('access').textContent = 'Staff access is required. Open this page through the organization’s configured reviewer sign-in.';

@@ -17,7 +17,7 @@ function fixture() {
   const limiterKeys = [];
   const env = {
     LIVE_ENABLED: "true", PRIVACY_COUNTRY: "FR", PRIVACY_NOTICE: { ...notice }, OPS_TOKEN: random(),
-    ACCESS_ISSUER: "https://synthetic-test.cloudflareaccess.com", ACCESS_AUD: "a".repeat(64), DURATION_MINUTES: 30,
+    ACCESS_ISSUER: "https://synthetic-test.cloudflareaccess.com", ACCESS_AUD: "a".repeat(64), DURATION_MINUTES: 15,
     RATE_LIMITER: { async limit({ key }) { limiterKeys.push(key); return { success: true }; } },
     ASSETS: { async fetch() { return new Response("Test page"); } },
     RECORDS: {

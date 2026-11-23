@@ -32,7 +32,7 @@ const server = createServer(async (request, response) => {
   };
   if (url.pathname.startsWith('/api/')) {
     calls.push({method: request.method, path: url.pathname, reference: ref || null, cookie});
-    if (url.pathname === '/api/config') return json(200, {enabled:true, durationMinutes:30, countries:['FR']});
+    if (url.pathname === '/api/config') return json(200, {enabled:true, durationMinutes:15, countries:['FR']});
     if (url.pathname === '/api/invitation' && request.method === 'POST') {
       const {invite} = await body();
       const invited = Object.values(invitations).find(item => item.invite === invite);
@@ -45,7 +45,7 @@ const server = createServer(async (request, response) => {
           serverNow:Date.now(), notice:invited.attempt.notice});
       }
       return json(200, {reference:invited.reference, resume:false, anotherActiveSession,
-        country:'FR', durationMinutes:30, expiresAt:Date.now()+60000, hardEnd:Date.now()+3600000,
+        country:'FR', durationMinutes:15, expiresAt:Date.now()+60000, hardEnd:Date.now()+3600000,
         serverNow:Date.now(), notice:invited.notice});
     }
     if (url.pathname === '/api/start' && request.method === 'POST') {

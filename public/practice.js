@@ -170,7 +170,7 @@ function showPreflight() {
   [["01–08", "Foundations", "Core financial concepts"], ["09–15", "Applied reading", "Portfolio P&L decisions"]].forEach(([range, label, detail]) => {
     const part = el("div", "preflight-part"); part.append(el("span", "preflight-range", range), el("strong", "", label), el("small", "", detail)); overview.append(part);
   });
-  const note = el("p", "preflight-lead", "Take 30 minutes. Calculator use is fine, and every answer stays editable until you submit. A refresh clears the paper; your score is shown only here, and no practice record is saved.");
+  const note = el("p", "preflight-lead", "Take 15 minutes. Calculator use is fine, and every answer stays editable until you submit. A refresh clears the paper; your score is shown only here, and no practice record is saved.");
   paperPanel.append(overview, note);
   const examplePanel = el("section", "preflight-panel", ""); examplePanel.id = "preflight-example-panel"; examplePanel.setAttribute("aria-labelledby", exampleTab.id); examplePanel.hidden = true;
   examplePanel.append(el("p", "example-label", "A QUICK WARM-UP"), el("p", "example-prompt", "€100 revenue − €60 cost. What is the gross margin in euros?"));
@@ -193,7 +193,7 @@ function showPreflight() {
   }
   const actions = el("div", "action-row");
   actions.append(button("Not now", "button secondary", () => dialog.close()));
-  const begin = button("Start 30-minute practice", "button primary", () => { dialog.close(); start(); });
+  const begin = button("Start 15-minute practice", "button primary", () => { dialog.close(); start(); });
   begin.id = "practice-begin";
   actions.append(begin);
   $("dialog-body").replaceChildren(title, tabs, paperPanel, examplePanel, actions);
@@ -278,7 +278,7 @@ function progressHeader() {
 function timerRow() {
   const row = el("div", "practice-timer-row");
   row.append(el("span", "", "Time remaining"));
-  const time = el("time", "practice-timer", "30:00"); time.id = "practice-timer"; time.setAttribute("role", "timer");
+  const time = el("time", "practice-timer", "15:00"); time.id = "practice-timer"; time.setAttribute("role", "timer");
   row.append(time, el("span", "timer-note", "Answers stay in this tab until you submit"));
   return row;
 }
@@ -439,7 +439,7 @@ function renderPaper(focus = false) {
   const frame = el("div", "practice-paper-frame");
   const paper = el("div", "practice-paper");
   const intro = el("section", "paper-instructions");
-  intro.append(el("p", "eyebrow", "15 QUESTIONS · 30 MINUTES"), el("p", "", "Choose one answer for every question. You can change selections anywhere on this page before submitting. Calculator use is fine."));
+  intro.append(el("p", "eyebrow", "15 QUESTIONS · 15 MINUTES"), el("p", "", "Choose one answer for every question. You can change selections anywhere on this page before submitting. Calculator use is fine."));
   paper.append(intro, partHeader("foundations", "Part 1 · Foundations", "01 — 08"));
   questions.slice(0, 8).forEach((q, i) => paper.append(renderQuestion(q, i)));
   paper.append(partHeader("applied", "Part 2 · Applied Reading", "09 — 15"));
