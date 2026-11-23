@@ -263,7 +263,8 @@ test('public exam copy is 15 minutes and bundles omit practice explanations', as
   assert.match(sources[1], /30 minutes after submission/);
   assert.match(sources[2], /Start 15-minute practice/);
   assert.match(sources[2], /Take 15 minutes/);
-  assert.doesNotMatch(sources[2], /30-minute/);
+  assert.match(sources[2], /15 QUESTIONS · 15 MINUTES/);
+  assert.doesNotMatch(sources[2], /30-minute|30 MINUTES|30:00/);
   assert.match(sources[3], /durationMinutes \|\| 15/);
   const wrangler = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
   assert.match(wrangler, /"DURATION_MINUTES": "15"/);

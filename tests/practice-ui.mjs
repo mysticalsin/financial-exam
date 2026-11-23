@@ -138,6 +138,8 @@ try {
   await page.locator('.practice-question-card').first().waitFor();
   const originalPaper=startedPapers[0].paper;
   assert.equal(await page.locator('.practice-question-card').count(),15,'all questions appear together');
+  assert.match(await page.locator('.paper-instructions').innerText(), /15 QUESTIONS · 15 MINUTES/);
+  assert.equal(await page.locator('.paper-masthead').evaluate((node) => getComputedStyle(node, '::after').animationName), 'banner-sweep', 'the masthead highlight crosses once');
   assert.equal(await page.locator('.practice-part-header[data-part="foundations"] .practice-question-card').count(),0,'section headers are separate from cards');
   assert.equal(await page.locator('.practice-part-header[data-part="foundations"]').count(),1);
   assert.equal(await page.locator('.practice-part-header[data-part="applied"]').count(),1);
@@ -171,6 +173,8 @@ try {
   await page.emulateMedia({reducedMotion:'reduce'});
   const motion=await page.locator('.studio-ledger .ledger-track i').first().evaluate(node=>getComputedStyle(node).animationDuration);
   assert.ok(motion==='0.01ms'||motion==='0s'||motion==='1e-05s',`reduced-motion mode suppresses ledger animation (${motion})`);
+  const sweep=await page.locator('.paper-masthead').evaluate(node=>getComputedStyle(node,'::after').animationDuration);
+  assert.ok(sweep==='0.01ms'||sweep==='0s'||sweep==='1e-05s',`reduced-motion mode suppresses the masthead sweep (${sweep})`);
   assert.equal(await page.locator('#practice-nav').isVisible(),true,'desktop question navigator is available');
   assert.equal(await page.locator('#practice-jump').isVisible(),true,'labeled question jump control is available');
   assert.deepEqual(await page.locator('[data-practice-filter]').evaluateAll(items=>items.map(item=>[item.dataset.practiceFilter,item.querySelector('[data-filter-count]').textContent])),[['all','15'],['answered','0'],['unanswered','15']]);

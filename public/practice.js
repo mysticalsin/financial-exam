@@ -90,6 +90,9 @@ function clearPractice() {
 }
 function serverTime() { return clockBase.server + performance.now() - clockBase.local; }
 function remainingSeconds() { return Math.max(0, Math.ceil((deadline - serverTime()) / 1000)); }
+function clockLabel(seconds) {
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
 function answeredCount() { return Object.keys(answers).filter((id) => Boolean(answers[id])).length; }
 function validTable(table) {
   return table && Array.isArray(table.headers) && Array.isArray(table.rows) &&
@@ -276,17 +279,18 @@ function progressHeader() {
   const rail = el("div", "practice-progress-shell");
   const progress = el("progress", "practice-progress"); progress.id = "practice-progress"; progress.max = total; progress.value = answeredCount();
   progress.setAttribute("aria-label", "Questions answered");
+  const meter = el("span", "meter"); meter.setAttribute("aria-hidden", "true");
   const labels = el("div", "practice-progress-labels");
   const count = el("span", "practice-answered"); count.id = "practice-answered"; count.textContent = `${answeredCount()} of ${total} answered`;
   const pct = el("span", "practice-percent"); pct.id = "practice-percent"; pct.textContent = `${Math.round(answeredCount() / total * 100)}%`;
-  labels.append(count, pct); rail.append(progress, labels);
+  labels.append(count, pct); rail.append(progress, meter, labels);
   header.append(brand, rail);
   return header;
 }
 function timerRow() {
   const row = el("div", "practice-timer-row");
   row.append(el("span", "", "Time remaining"));
-  const time = el("time", "practice-timer", "30:00"); time.id = "practice-timer"; time.setAttribute("role", "timer");
+  const time = el("time", "practice-timer", clockLabel(clockBase && deadline ? remainingSeconds() : 15 * 60)); time.id = "practice-timer"; time.setAttribute("role", "timer");
   row.append(time, el("span", "timer-note", "Answers stay in this tab until you submit"));
   return row;
 }
@@ -300,7 +304,7 @@ function updateProgress() {
   if (pctLabel) pctLabel.textContent = `${Math.round(count / total * 100)}%`;
   const submit = $("practice-submit");
   if (submit) submit.disabled = count !== total || submissionPending;
-  if (progress) progress.style.setProperty("--progress", `${count / total * 100}%`);
+  if (progress) progress.parentElement?.style.setProperty("--progress", `${count / total * 100}%`);
   updateQuestionNavigation();
 }
 function renderQuestion(question, index) {
@@ -319,6 +323,7 @@ function renderQuestion(question, index) {
     cue.href = "#practice-reference-table";
     body.append(cue);
   }
+  card.style.setProperty("--enter", `${Math.min(index, 6) * 42}ms`);
   head.append(number, body); card.append(head);
   if (question.table) card.append(renderTable(question.table, "Comparison figures"));
   const fieldset = el("fieldset", "practice-options");
@@ -447,7 +452,7 @@ function renderPaper(focus = false) {
   const frame = el("div", "practice-paper-frame");
   const paper = el("div", "practice-paper");
   const intro = el("section", "paper-instructions");
-  intro.append(el("p", "eyebrow", "15 QUESTIONS · 30 MINUTES"), el("p", "", "Choose one answer for every question. You can change selections anywhere on this page before submitting. Calculator use is fine."));
+  intro.append(el("p", "eyebrow", "15 QUESTIONS · 15 MINUTES"), el("p", "", "Choose one answer for every question. You can change selections anywhere on this page before submitting. Calculator use is fine."));
   paper.append(intro, partHeader("foundations", "Part 1 · Foundations", "01 — 08"));
   questions.slice(0, 8).forEach((q, i) => paper.append(renderQuestion(q, i)));
   paper.append(partHeader("applied", "Part 2 · Applied Reading", "09 — 15"));
@@ -574,6 +579,7 @@ function renderResult() {
     const tone = item.outcome === "good" ? "good" : item.outcome === "unanswered" ? "unanswered" : "bad";
     const label = tone === "good" ? "Correct" : tone === "unanswered" ? "Unanswered" : "Incorrect";
     const row = el("li", "exam-review-item is-" + tone);
+    row.style.setProperty("--enter", `${Math.min(index, 8) * 36}ms`);
     row.append(el("p", "review-outcome", "Question " + (index + 1) + " · " + label), el("p", "review-prompt", item.prompt), el("p", "review-explanation", item.explanation));
     reviewList.append(row);
   });
@@ -601,7 +607,7 @@ function updateClock() {
   const timer = $("practice-timer");
   if (timer && clockBase && deadline) {
     const seconds = remainingSeconds();
-    timer.textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+    timer.textContent = clockLabel(seconds);
     timer.classList.toggle("ending", seconds <= 120);
   }
 }

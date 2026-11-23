@@ -684,6 +684,9 @@ function rail() {
   progress.max = attempt.questions.length;
   progress.value = countAnswers();
   progress.setAttribute("aria-label", "Questions answered");
+  const meter = el("span", "meter");
+  meter.setAttribute("aria-hidden", "true");
+  meter.style.setProperty("--progress", `${attempt.questions.length ? (countAnswers() / attempt.questions.length) * 100 : 0}%`);
   const timer = el("p", "clock", "Time left ");
   const time = el("span");
   time.id = "countdown";
@@ -705,6 +708,7 @@ function rail() {
     el("h2", "", "Your progress"),
     answered,
     progress,
+    meter,
     timer,
     link,
   );
@@ -841,6 +845,7 @@ function refreshSave() {
   $("answered-count").textContent =
     countAnswers() + " of " + attempt.questions.length + " answered";
   $("answer-progress").value = countAnswers();
+  document.querySelector(".rail .meter")?.style.setProperty("--progress", `${attempt.questions.length ? (countAnswers() / attempt.questions.length) * 100 : 0}%`);
   const status = $("save-state");
   const fixes = $("sync-actions");
   fixes.replaceChildren();
@@ -1148,6 +1153,7 @@ function renderExamReview(review) {
     const tone = item.outcome === "good" ? "good" : item.outcome === "unanswered" ? "unanswered" : "bad";
     const label = tone === "good" ? "Correct" : tone === "unanswered" ? "Unanswered" : "Incorrect";
     const row = el("li", "exam-review-item is-" + tone);
+    row.style.setProperty("--enter", `${Math.min(index, 8) * 36}ms`);
     row.append(el("p", "review-outcome", "Question " + (index + 1) + " · " + label));
     if (typeof item.prompt === "string" && item.prompt) row.append(el("p", "review-prompt", item.prompt));
     row.append(el("p", "review-explanation", item.explanation));

@@ -193,6 +193,7 @@ try {
   await a.getByRole('button',{name:'Start assessment'}).click();
   try { await a.getByText('Candidate A private prompt 841').waitFor(); }
   catch (error) { console.error('Candidate A state:', await a.locator('body').innerText(), calls); throw error; }
+  assert.equal(await a.locator('#active-question').evaluate((node) => getComputedStyle(node).animationName), 'surface-in', 'each recruitment question settles in once');
   assert.equal(startPayloads[0].copyShortcutReview,true,'start confirms the enabled setting shown in preflight');
   assert.equal(await a.locator('#active-question details.copy-shortcut-notice').getAttribute('open'),null,
     'the detailed active-question notice stays available but collapsed');
@@ -270,6 +271,8 @@ try {
   await a.getByRole('button',{name:'Confirm submission'}).click();
   await a.getByText('Assessment submitted').waitFor();
   await a.getByText('Good: billing minus direct cost is the margin.').waitFor();
+  assert.equal(await a.locator('.receipt-mark').evaluate((node) => getComputedStyle(node).animationName), 'mark-in', 'the receipt mark settles once');
+  assert.match(await a.locator('.exam-review').evaluate((node) => node.textContent), /Bad: the cost figure alone is not the margin/);
   assert.match(await a.locator('body').innerText(), /1 of 2/);
   assert.equal((await a.locator('body').innerText()).includes(refs.A), true);
 
