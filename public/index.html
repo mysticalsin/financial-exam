@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#2b0058" />
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Financial assessment | Mantu</title>
+    <link rel="icon" href="/mantu-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/invite.js"></script>
+    <script type="module" src="/app.js"></script>
+    <script type="module" src="/practice.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main class="page-main" id="main" tabindex="-1">
+      <section class="practice-welcome" id="landing" aria-labelledby="landing-title">
+        <div class="studio-hero">
+          <div class="studio-copy" id="practice-intro">
+            <div class="studio-brand"><img src="/mantu-wordmark.svg" width="214" height="41" alt="Mantu" /></div>
+            <p class="welcome-eyebrow">Manager Recruitment</p>
+            <h1 id="landing-title">Financial<br />Test</h1>
+            <p class="welcome-subtitle">Gross Margin &amp; P&amp;L Reading</p>
+            <p class="welcome-scope">15 questions <span aria-hidden="true">·</span> 30 minutes</p>
+            <p class="welcome-kicker">Anonymous practice</p>
+            <p class="sub" id="welcome-description">A practical assessment of financial foundations and portfolio performance.</p>
+            <ul class="welcome-facts">
+              <li>Calculator use is fine</li>
+              <li>Review and change answers before submitting</li>
+              <li>No name or sign-in required</li>
+            </ul>
+            <button class="button primary start-practice" type="button" id="landing-action">
+              Start practice assessment <span aria-hidden="true">→</span>
+            </button>
+            <p class="welcome-hint" id="hero-hint">
+              Have a recruitment invitation? Open the personal link from your recruiter.
+            </p>
+            <span id="hero-time" hidden></span>
+            <p class="privacy-note" id="welcome-privacy">
+              Answers stay in this tab until submission. The service returns a private practice score and does not save a practice record.
+            </p>
+          </div>
+          <figure class="studio-ledger" aria-labelledby="ledger-title">
+            <div class="ledger-topline"><span class="ledger-pill">PORTFOLIO SNAPSHOT</span><span>MONTHLY · EUR</span></div>
+            <figcaption id="ledger-title">One portfolio.<br /><strong>Five numbers.</strong></figcaption>
+            <div class="ledger-row ledger-revenue"><span class="ledger-index">01</span><span class="ledger-label">Revenue</span><span class="ledger-amount">€120,000</span><span class="ledger-track"><i></i></span></div>
+            <div class="ledger-row ledger-costs"><span class="ledger-index">02</span><span class="ledger-label">Direct costs</span><span class="ledger-amount">€78,000</span><span class="ledger-track"><i></i></span></div>
+            <div class="ledger-row ledger-margin"><span class="ledger-index">03</span><span class="ledger-label">Gross margin</span><span class="ledger-amount">€42,000</span><span class="ledger-track"><i></i></span></div>
+            <div class="ledger-row ledger-overhead"><span class="ledger-index">04</span><span class="ledger-label">Overhead</span><span class="ledger-amount">€18,000</span><span class="ledger-track"><i></i></span></div>
+            <div class="ledger-row ledger-contribution"><span class="ledger-index">05</span><span class="ledger-label">Contribution</span><span class="ledger-amount">€24,000</span><span class="ledger-track"><i></i></span></div>
+            <div class="ledger-foot"><span>GROSS MARGIN</span><strong>35%</strong><span class="ledger-foot-rule"></span><span>CONTRIBUTION</span><strong>20%</strong></div>
+            <span class="ledger-orbit" aria-hidden="true"></span>
+          </figure>
+        </div>
+        <section class="studio-before" aria-labelledby="before-start-title">
+          <div><p class="welcome-kicker">A clear, focused run</p><h2 id="before-start-title">Before you start</h2></div>
+          <p class="studio-before-copy">Two parts move from financial foundations to portfolio decisions. Allow 30 minutes, use a calculator if helpful, and review every answer before you submit.</p>
+          <p class="studio-before-privacy">Practice answers stay in this tab until you submit. Scoring returns only your private feedback; no practice record is saved. Recruitment invitations use a separate private flow.</p>
+        </section>
+      </section>
+
+      <section id="outline" hidden aria-hidden="true"></section>
+      <section id="workspace" hidden aria-live="polite"></section>
+      <div id="system-status" role="status" aria-live="polite" class="status-line"></div>
+      <noscript>
+        <p class="notice">Enable JavaScript to start the public practice assessment or open your recruitment invitation.</p>
+      </noscript>
+    </main>
+
+    <footer class="site-foot">
+      <div class="foot-inner">
+        <span class="foot-brand">Mantu <span aria-hidden="true">/</span> Amaris Consulting</span>
+        <div class="foot-links">
+          <button type="button" class="text-action" id="open-privacy">Privacy notice</button>
+          <button type="button" class="text-action" id="open-support">Access &amp; support</button>
+        </div>
+      </div>
+    </footer>
+
+    <dialog id="dialog" aria-labelledby="dialog-title">
+      <div id="dialog-body"></div>
+    </dialog>
+  </body>
+</html>
