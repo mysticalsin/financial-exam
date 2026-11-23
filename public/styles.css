@@ -1263,6 +1263,18 @@ body.practice-active #workspace { display: block; min-height: 100vh; padding: 0 
 .score-band span { color: #796d80; font-variant-numeric: tabular-nums; font-size: 11px; }
 .score-band.is-active { border-color: #7100b6; background: #f3e9fa; color: #4f007d; box-shadow: inset 0 0 0 1px #7100b6; }
 .score-band.is-active span { color: #4f007d; }
+.answer-review { display: grid; gap: 12px; margin-top: 22px; }
+.answer-review h2 { margin: 0; color: #281335; font-size: 20px; letter-spacing: -.03em; }
+.answer-review-lead { margin: 0; color: #65596d; font-size: 13px; line-height: 1.45; }
+.answer-review article { padding: 14px 16px; border: 1px solid #e5dfe8; border-radius: 12px; background: #fff; }
+.answer-review article.is-match { border-color: #b7d7b0; background: #f7fbf6; }
+.answer-review article.is-miss { border-color: #e3c3c8; background: #fff8f8; }
+.answer-kicker { margin: 0 0 6px; color: #704187; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.answer-review .prompt { margin: 0 0 8px; color: #2d1739; font-size: 15px; line-height: 1.4; }
+.answer-review article p { margin: 4px 0; color: #403148; font-size: 14px; line-height: 1.45; }
+.answer-label { color: #65596d; font-weight: 750; }
+.answer-why { margin-top: 8px !important; }
+.result-score { margin: 0 0 8px; color: #2b0058; font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
 .result-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 11px; margin-top: 23px; }
 .result-actions .button { min-height: 48px; }
 .practice-expired .button { margin: 8px; }

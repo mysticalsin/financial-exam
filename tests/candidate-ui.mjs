@@ -129,6 +129,19 @@ const server = createServer(async (request, response) => {
       current.status = 'submitted';
       current.attempt.submittedAt = Date.now();
       current.attempt.purgeAt = Date.now()+60000;
+      current.attempt.score = current.attempt.questions.filter(question => {
+        const selected = current.attempt.answers[question.id]?.[0];
+        return selected === question.options[0].id;
+      }).length;
+      current.attempt.review = current.attempt.questions.map(question => {
+        const selected = question.options.find(option => current.attempt.answers[question.id]?.includes(option.id));
+        const good = question.options[0].text;
+        return {
+          prompt: question.prompt, section: question.section, yours: selected?.text ?? null, good,
+          matched: selected?.text === good,
+          explanation: `Good answer: ${good}. Why the others are not: the other figure does not match this synthetic case.`,
+        };
+      });
       return json(200, {attempt:current.attempt, serverNow:Date.now()}, {
         'Set-Cookie':`__Host-assessment=${cookie}.${current.name.toLowerCase().repeat(64)}; Path=/; Secure; HttpOnly; SameSite=Strict`,
       });
@@ -260,9 +273,13 @@ try {
   await a.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'c',ctrlKey:true,bubbles:true})));
   await a.waitForTimeout(50);
   assert.equal(integrityCalls.length,2,'review view no longer has the active-question listener');
+  assert.equal(await a.locator('.answer-review').count(), 0, 'recruitment hides explanations while the attempt is open');
   await a.getByRole('button',{name:'Submit assessment'}).click();
   await a.getByRole('button',{name:'Confirm submission'}).click();
   await a.getByText('Assessment submitted').waitFor();
+  assert.equal(await a.locator('.result-score').innerText(), '2 of 2');
+  assert.equal(await a.locator('.answer-review article').count(), 2);
+  assert.match(await a.locator('.answer-review').innerText(), /Why the others are not:/);
   assert.equal((await a.locator('body').innerText()).includes(refs.A), true);
 
   await b.goto(link('B'));

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import worker from '../src/worker.js';
-import {makePracticePaper, scorePractice} from '../src/practice.js';
+import {makePracticePaper, reviewPractice, scorePractice} from '../src/practice.js';
 
 const origin = 'https://assessment.example';
 const key = 'a'.repeat(64);
@@ -116,6 +116,10 @@ test('practice paper matches the supplied 15-question paper, shuffles within its
     headers: ['', 'BM Alpha', 'BM Beta'],
     rows: [['Revenue', '€300,000', '€500,000'], ['Gross Margin', '€90,000', '€120,000']],
   });
+  assert.equal(JSON.stringify(first.questions).includes('Why the others are not:'), false, 'practice questions do not carry end-of-paper explanations');
+  const taught = reviewPractice(first, first.key);
+  assert.equal(taught.length, 15);
+  assert.ok(taught.every(item => item.matched && item.yours === item.good && item.explanation.startsWith(`Good answer: ${item.good}. Why the others are not:`)));
   assert.notDeepEqual(first.questions.map(q => q.id), second.questions.map(q => q.id), 'question order is freshly shuffled');
   for (const paper of [first, second]) {
     assert.equal(scorePractice({key:paper.key,choiceIds:paper.choiceIds}, paper.key).score, 15);
@@ -148,10 +152,12 @@ test('practice route is separate, stateless, same-origin, capped and uses opaque
   assert.equal(started.headers.has('Set-Cookie'), false);
   const first = await started.json();
   assert.equal(first.questions.length, 15);
-  assert.equal(first.deadline - first.serverNow, 30 * 60 * 1000);
+  assert.equal(first.deadline - first.serverNow, 15 * 60 * 1000);
   assert.match(first.challenge, /^p1\.[A-Za-z\d_-]+$/);
   assert.equal(first.challenge.includes(first.questions[0].id), false, 'ticket is encrypted, not readable JSON');
   assert.equal(Object.keys(first).sort().join(','), 'challenge,deadline,questions,referenceTable,serverNow');
+  assert.equal(JSON.stringify(first).includes('Good answer:'), false, 'starting a paper does not reveal explanations');
+  assert.ok(first.challenge.length < 12000, 'the encrypted challenge stays small enough to submit');
   assert.deepEqual(first.referenceTable.rows.map(row => row[1]), ['€120,000', '€78,000', '€42,000', '€18,000', '€24,000']);
   assert.equal(limited.length, 1);
 
@@ -170,9 +176,15 @@ test('practice route is separate, stateless, same-origin, capped and uses opaque
   const partial = await request('/api/practice/submit', {challenge:first.challenge,answers:allFirstChoices});
   assert.equal(partial.status, 200);
   const scored = await partial.json();
-  assert.deepEqual(Object.keys(scored).sort(), ['answered','score','submittedAt','total']);
+  assert.deepEqual(Object.keys(scored).sort(), ['answered','review','score','submittedAt','total']);
   assert.equal(scored.total, 15);
   assert.equal(scored.answered, 15);
+  assert.equal(scored.review.length, 15);
+  assert.equal(scored.review.filter(item => item.matched).length, scored.score);
+  assert.ok(scored.review.every(item => item.explanation.startsWith(`Good answer: ${item.good}. Why the others are not:`) && item.matched === (item.yours === item.good)));
+  const pnl = scored.review.find(item => item.prompt.startsWith('What does P&L'));
+  assert.equal(pnl.good, 'Profit & Loss');
+  assert.match(pnl.explanation, /Planning & Logistics/);
   const retry = await (await request('/api/practice/submit', {challenge:first.challenge,answers:allFirstChoices})).json();
   assert.deepEqual({score:retry.score,total:retry.total,answered:retry.answered},
     {score:scored.score,total:scored.total,answered:scored.answered});

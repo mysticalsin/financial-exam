@@ -217,7 +217,7 @@ async function exercise() {
   assert.ok(JSON.stringify(retry.body.attempt) === JSON.stringify(initial), 'retry preserves the same paper and deadline');
   assert.equal(initial.questions.length, 15);
   assert.equal(initial.deadline - initial.startedAt, 17 * 60000);
-  const privateFields = new Set(['key', 'correct', 'score', 'expected', 'inviteHash', 'sessionHash', 'paper']);
+  const privateFields = new Set(['key', 'correct', 'score', 'expected', 'inviteHash', 'sessionHash', 'paper', 'notes', 'review', 'explanation', 'good', 'matched']);
   JSON.stringify(initial, (name, value) => {
     assert.ok(!privateFields.has(name), 'candidate payload omits private field ' + name);
     return value;
@@ -248,7 +248,7 @@ async function exercise() {
   assert.ok(initial.purgeAt <= preflight.hardEnd);
   assert.equal(exportA.score, null);
   JSON.stringify(exportA, (name, value) => {
-    assert.ok(!['expected', 'correct', 'key', 'paper'].includes(name), 'active reviewer record withholds ' + name);
+    assert.ok(!['expected', 'correct', 'key', 'paper', 'notes', 'review', 'explanation', 'good', 'matched'].includes(name), 'active reviewer record withholds ' + name);
     return value;
   });
   // Pick candidate answers without access to the grade or the correct option.
@@ -288,7 +288,13 @@ async function exercise() {
   assert.equal(receipt.purgeAt, Math.min(preflight.hardEnd, receipt.submittedAt + 30 * 60000));
   assert.equal(receipt.answered, 15);
   assert.equal(receipt.questions.length, 0);
-  assert.ok(!Object.hasOwn(receipt, 'score') && !Object.hasOwn(receipt, 'key'));
+  assert.ok(Array.isArray(receipt.review) && receipt.review.length === 15);
+  assert.equal(receipt.score, receipt.review.filter(item => item.matched).length);
+  assert.ok(!Object.hasOwn(receipt, 'key'));
+  JSON.stringify(receipt, (name, value) => {
+    assert.ok(!['key', 'correct', 'expected', 'notes', 'inviteHash', 'sessionHash', 'paper'].includes(name), 'submitted receipt withholds ' + name);
+    return value;
+  });
   assert.deepEqual(status(await submit(cookieA, a.reference, revision), 200, 'idempotent final submit').attempt, receipt);
   status(await answer(cookieA, a.reference, receipt.revision, firstQ.id, choices[0]), 409, 'completed paper is immutable');
   const result = status(await review(a.reference), 200, 'recruiter result');
@@ -303,7 +309,14 @@ async function exercise() {
     assert.equal(row.expected.length, 1);
     assert.ok(question.options.some(o => o.text === row.expected[0]), 'post-submit key names an issued answer');
     if (chosenText === row.expected[0]) expectedScore++;
+    const taught = receipt.review.find(item => item.prompt === question.prompt);
+    assert.equal(taught.good, row.expected[0]);
+    assert.equal(taught.yours, chosenText);
+    assert.equal(taught.matched, chosenText === row.expected[0]);
+    assert.equal(row.explanation, taught.explanation);
+    assert.match(taught.explanation, /Why the others are not:/);
   }
+  assert.equal(receipt.score, expectedScore);
   assert.equal(result.score, expectedScore, 'grade matches an independent count from original selections and closed review');
   status(await review(a.reference, { method: 'DELETE' }), 200, 'erase request');
   status(await review(a.reference), 404, 'deleted operator export');

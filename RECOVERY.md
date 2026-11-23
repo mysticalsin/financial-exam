@@ -14,7 +14,7 @@ Recovered 2026-11-23 (America/Sao_Paulo).
 
 Live bindings at recovery (do **not** commit secrets):
 - ASSETS, ATTEMPTS (DO), RECORDS (R2 EU), RATE_LIMITER
-- `DURATION_MINUTES=30` (Tony: change to **15**)
+- `DURATION_MINUTES=15` in source (`INVITE_TTL_MINUTES` remains 30: it is the start-by window, not the exam clock). Live Worker was still 30 at recovery and has not been redeployed.
 - `INVITE_TTL_MINUTES=30`, `LIVE_ENABLED=false`, `PRACTICE_KEY` (secret)
 
 Screenshots / studio mp4 under docs/screenshots were omitted (large binaries).
@@ -31,14 +31,15 @@ Screenshots / studio mp4 under docs/screenshots were omitted (large binaries).
 | `robots.txt` | Recovered from live |
 | Durable Object class source | **Partial** — DO logic lives inside modular `src/worker.js` (Assessment namespace via `env.ATTEMPTS`); no separate DO file |
 | Question bank size | **Generative** templates in `src/bank.js` (~dozen item factories + random params), **not** a static 100–200 curated bank yet |
-| 15-minute timer | Config still defaults to 30; needs env/`DURATION_MINUTES=15` |
-| End-only scoring + explanations + luxurious UI + Rust hot paths + stress/perfection bar | **Project backlog** (not implemented in this recovery commit) |
+| 15-minute timer | Source default is 15 minutes for practice and recruitment. Not deployed. |
+| End-only score + good/bad explanations | Implemented in source for practice and recruitment. Explanations are withheld until submit. Not deployed. |
+| Luxurious UI + Rust hot paths + stress/perfection bar + 100–200 question bank | **Project backlog** |
 
 ## Tony requirements (Project backlog — do not treat as done)
 
-- 15-minute exam timer
+- 15-minute exam timer — done in source; not deployed
 - 100–200 question rotation bank (anti-memorization)
-- Score + right/wrong explanations **only at the end** (no per-question drip)
+- Score + right/wrong explanations **only at the end** (no per-question drip) — done in source for practice and recruitment; not deployed
 - Rich / luxurious UI + animations
 - Uncheatable (server-side keys, no answer leakage)
 - Full stress tests every pack; refactor for efficiency; Rust on hot paths where it helps UX

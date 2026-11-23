@@ -1,5 +1,5 @@
 const TOKEN_VERSION = 'p1';
-const TICKET_LIFETIME = 30 * 60 * 1000;
+const TICKET_LIFETIME = 15 * 60 * 1000;
 const MAX_BODY_BYTES = 32 * 1024;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -72,10 +72,37 @@ const sourceQuestions = [
   ["You are comparing two Business Managers' portfolios at end of quarter. Which portfolio is more efficient from a Gross Margin % perspective?", ['BM Alpha (30% margin)', 'BM Beta (24% margin)', 'BM Beta, because €120,000 is a larger absolute amount', 'Both are equally efficient'], 0, false, { headers: ['', 'BM Alpha', 'BM Beta'], rows: [['Revenue', '€300,000', '€500,000'], ['Gross Margin', '€90,000', '€120,000']] }],
 ];
 
+const because = [
+  'Planning & Logistics, Profit & Liquidity, and Performance & Leverage are not the name of the profit and loss statement.',
+  'The number of consultants hired, the number of contracts signed per year, and the overhead charged to support functions do not themselves create client revenue.',
+  'Total revenue before deductions is revenue, not margin. Revenue minus all overhead is a result after indirect costs. Net income after taxes comes after every cost and tax.',
+  '€1,300 adds €800 and €500. €500 is the daily cost alone. €800 is the billing rate alone.',
+  '62.5% is cost divided by billing. 50% and 25% do not equal €300 divided by €800.',
+  "Head-office rent, brand marketing, and the CEO's compensation are overhead, not the direct cost of billable consultants.",
+  'No impact ignores the cost that remains without revenue. An improvement or an increase would require more margin, and bench time does the opposite.',
+  "€28,000 is the direct cost. €10,000 is one consultant's billing. €40,000 is the team's revenue before cost.",
+  '65% is direct cost over revenue. 20% is contribution over revenue. 25% is neither the gross margin nor one of those ratios.',
+  '€42,000 pretends the lost €9,000 billing does not matter. €39,500 is not the lost billing or the payroll. €35,500 subtracts the €6,500 payroll even though that cost stays in the direct-cost total.',
+  'Overhead, additional support staff, and taxes sit below gross margin. With revenue stable, the drop from 38% to 30% comes from higher direct cost.',
+  'Consultant B is about 25%, which is lower. The rates are not equal, and both can be calculated from billing and cost.',
+  'The margin does not stay the same, because the €1,000 price cut comes out of margin while cost stays €6,500. €3,000 subtracts only €500. €4,500 moves the margin the wrong way.',
+  'Fewer internal meetings do not change gross margin. A lower office allocation and a new support profile are overhead.',
+  "BM Beta's 24% is a lower margin even though €120,000 is a larger euro amount than €90,000. The portfolios are not equally efficient.",
+];
+
+function explanationFor(index) {
+  const source = sourceQuestions[index];
+  const good = source[1][source[2]];
+  const reason = because[index];
+  if (typeof reason !== 'string' || reason.trim().length < 20) throw new Error('Each practice question needs an end-of-paper explanation.');
+  return `Good answer: ${good}. Why the others are not: ${reason.trim()}`;
+}
+
 function makeQuestion(source, index) {
   const [prompt, texts, correctIndex, usesReferenceTable = false, table] = source;
   const id = `practice-q${index + 1}`;
-  const options = shuffle(texts.map(text => ({ id: uuid(), text })));
+  const labeled = texts.map(text => ({ id: uuid(), text }));
+  const options = shuffle(labeled);
   if (new Set(options.map(option => option.text)).size !== 4) throw new Error('Practice options must be distinct.');
   const question = {
     id,
@@ -85,7 +112,7 @@ function makeQuestion(source, index) {
   };
   if (usesReferenceTable) question.usesReferenceTable = true;
   if (table) question.table = table;
-  return { question, correct: options.find(option => option.text === texts[correctIndex]).id };
+  return { question, correct: labeled[correctIndex].id, order: labeled.map(option => option.id), source: index };
 }
 
 export function makePracticePaper() {
@@ -95,7 +122,14 @@ export function makePracticePaper() {
   const questions = entries.map(({ question }) => question);
   const key = Object.fromEntries(entries.map(({ question, correct }) => [question.id, correct]));
   const choiceIds = Object.fromEntries(questions.map(question => [question.id, question.options.map(option => option.id)]));
-  return { questions, key, choiceIds, referenceTable };
+  const sequence = questions.map(question => question.id);
+  const order = Object.fromEntries(entries.map(({ question, order: optionIds }) => [question.id, optionIds]));
+  const source = Object.fromEntries(entries.map(({ question, source: index }) => [question.id, index]));
+  return { questions, key, choiceIds, referenceTable, sequence, order, source };
+}
+
+export function reviewPractice(paper, answers) {
+  return assembleReview(paper.sequence, paper.order, paper.source, answers);
 }
 
 function keyBytes(secret) {
@@ -174,10 +208,46 @@ async function readBody(request, fields) {
 function validateTicket(ticket, now) {
   if (!ticket || ticket.v !== 1 || !Number.isSafeInteger(ticket.issuedAt) || !Number.isSafeInteger(ticket.deadline) ||
       ticket.deadline !== ticket.issuedAt + TICKET_LIFETIME || !ticket.key || !ticket.choiceIds ||
+      !Array.isArray(ticket.sequence) || !ticket.order || !ticket.source ||
       Object.keys(ticket.key).length !== 15 || Object.keys(ticket.choiceIds).length !== 15 ||
-      Object.keys(ticket.key).some(id => !Object.hasOwn(ticket.choiceIds, id)))
+      Object.keys(ticket.order).length !== 15 || Object.keys(ticket.source).length !== 15 ||
+      ticket.sequence.length !== 15 || new Set(ticket.sequence).size !== 15)
+    fail(400, 'This practice session is invalid. Start a new practice paper.');
+  const seen = new Set();
+  for (const id of ticket.sequence) {
+    const order = ticket.order[id];
+    const source = ticket.source[id];
+    const allowed = ticket.choiceIds[id];
+    if (!Object.hasOwn(ticket.key, id) || !Array.isArray(order) || order.length !== 4 || new Set(order).size !== 4 ||
+        !Array.isArray(allowed) || allowed.length !== 4 || order.some(optionId => !allowed.includes(optionId)) ||
+        !Number.isInteger(source) || source < 0 || source > 14 || seen.has(source))
+      fail(400, 'This practice session is invalid. Start a new practice paper.');
+    seen.add(source);
+    if (ticket.key[id] !== order[sourceQuestions[source][2]])
+      fail(400, 'This practice session is invalid. Start a new practice paper.');
+  }
+  if (Object.keys(ticket.key).some(id => !ticket.sequence.includes(id)))
     fail(400, 'This practice session is invalid. Start a new practice paper.');
   if (now >= ticket.deadline) fail(410, 'This practice paper has expired. Start a new one to continue.');
+}
+
+function assembleReview(sequence, order, source, answers) {
+  return sequence.map(id => {
+    const index = source[id];
+    const [prompt, texts, correctIndex] = sourceQuestions[index];
+    const selectedId = answers?.[id];
+    const selectedIndex = typeof selectedId === 'string' ? order[id].indexOf(selectedId) : -1;
+    const yours = selectedIndex >= 0 ? texts[selectedIndex] : null;
+    const good = texts[correctIndex];
+    return {
+      prompt,
+      section: index < 8 ? 'Foundations' : 'Applied Reading',
+      yours,
+      good,
+      matched: yours !== null && yours === good,
+      explanation: explanationFor(index),
+    };
+  });
 }
 
 export function scorePractice(ticket, answers) {
@@ -189,7 +259,10 @@ export function scorePractice(ticket, answers) {
         !ticket.choiceIds[questionId].includes(optionId)) fail(422, 'One or more selected answers do not belong to this practice paper.');
     if (ticket.key[questionId] === optionId) score++;
   }
-  return { score, total: 15, answered: Object.keys(answers).length };
+  const result = { score, total: 15, answered: Object.keys(answers).length };
+  if (Array.isArray(ticket.sequence) && ticket.order && ticket.source)
+    result.review = assembleReview(ticket.sequence, ticket.order, ticket.source, answers);
+  return result;
 }
 
 export async function handlePractice(request, env, throttle) {
@@ -205,7 +278,10 @@ export async function handlePractice(request, env, throttle) {
     const now = Date.now();
     if (start) {
       const paper = makePracticePaper();
-      const payload = { v: 1, issuedAt: now, deadline: now + TICKET_LIFETIME, key: paper.key, choiceIds: paper.choiceIds };
+      const payload = {
+        v: 1, issuedAt: now, deadline: now + TICKET_LIFETIME, key: paper.key, choiceIds: paper.choiceIds,
+        sequence: paper.sequence, order: paper.order, source: paper.source,
+      };
       const challenge = await encryptTicket(payload, env.PRACTICE_KEY);
       return json({ questions: paper.questions, referenceTable: paper.referenceTable, challenge, serverNow: now, deadline: payload.deadline });
     }

@@ -225,6 +225,7 @@ el('lookup').addEventListener('submit', event => {
       detail(answers,'Selected',(response.selected || []).join(', ') || 'Unanswered');
       detail(answers,'Expected',(response.expected || []).join(', '));
       if (filtersSupported && response.selected.length) detail(answers,'Result',responseCorrect(response) ? 'Correct' : 'Incorrect');
+      if (response.explanation) detail(answers,'Why',response.explanation);
       item.append(heading);
       if (response.table) {
         const table = document.createElement('table');
@@ -300,7 +301,7 @@ try {
     el('country').append(option);
   }
   el('issue').hidden = !config.enabled;
-  el('minutes').placeholder = String(config.durationMinutes || 30);
+  el('minutes').placeholder = String(config.durationMinutes || 15);
   if (!config.enabled) el('access').textContent = 'Recruitment is closed. Existing records can still be retrieved and erased.';
 } catch {
   el('access').textContent = 'Staff access is required. Open this page through the organization’s configured reviewer sign-in.';

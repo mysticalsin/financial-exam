@@ -131,6 +131,14 @@ async function rememberHistory() {
 function receive(data, expected = attempt?.reference) {
   if (data?.attempt === undefined)
     throw new Error("The assessment service returned an incomplete response.");
+  if (data.attempt?.status === "active") {
+    const leaked = ["score", "review", "key", "notes", "correct", "expected", "explanation", "good"];
+    const questionLeaked = ["explanation", "correct", "good", "expected", "key", "notes", "matched", "review"];
+    if (leaked.some((name) => Object.hasOwn(data.attempt, name)) ||
+        (data.attempt.questions ?? []).some((question) => questionLeaked.some((name) => Object.hasOwn(question, name)) ||
+          (question.options ?? []).some((option) => questionLeaked.some((name) => Object.hasOwn(option, name)))))
+      throw new Error("The assessment could not be shown. Reopen your invitation.");
+  }
   if (expected && (!data.attempt || data.attempt.reference !== expected)) {
     const message =
       "This tab can no longer access that assessment. Open your personal invitation in a private browsing window.";
@@ -298,7 +306,7 @@ function privacyContent() {
     "body-copy",
     recruitmentContext
       ? "This recruitment assessment is governed by the country privacy notice below. The public practice privacy description does not apply to this invitation. The service also receives connection metadata, such as IP address and request timing, to deliver and protect the site."
-      : "The anonymous practice assessment uses synthetic financial questions. Before you submit, answers and progress stay in this tab's memory and are not written to browser storage. If you submit, the service checks your answers and returns only your score; it does not save a practice record or share the score with recruiters. The service receives connection metadata, such as IP address and request timing, to deliver and protect the site. A recruitment invitation starts a separate process with its own privacy notice and retention rules.",
+      : "The anonymous practice assessment uses synthetic financial questions. Before you submit, answers and progress stay in this tab's memory and are not written to browser storage. If you submit, the service returns your score and an explanation of each answer; it does not reveal those explanations during the paper, save a practice record, or share the result with recruiters. The service receives connection metadata, such as IP address and request timing, to deliver and protect the site. A recruitment invitation starts a separate process with its own privacy notice and retention rules.",
   );
   const groupContact = el(
     "p",
@@ -365,22 +373,22 @@ function landing(focus = false) {
   ).map((text) => el("li", "", text)));
   $("welcome-privacy").textContent = recruitmentLink
     ? "This invitation starts a recruitment assessment. Read the country privacy notice before you begin; it explains how your answers are used and retained."
-    : "Answers stay in this tab until submission. The service returns a private practice score and does not save a practice record.";
+    : "Answers stay in this tab until submission. The service returns a private score and answer explanations only after you submit, and it does not save a practice record.";
   const ledgerPill = $("landing").querySelector(".ledger-pill");
   if (ledgerPill) ledgerPill.textContent = "EXAMPLE PORTFOLIO";
   const beforeCopy = $("landing").querySelector(".studio-before-copy");
   if (beforeCopy) beforeCopy.textContent = recruitmentLink
     ? `This invitation contains 15 questions. Your time allowance is confirmed below before you start. You may use a calculator and review every answer before submitting.`
-    : "Two parts move from financial foundations to portfolio decisions. Allow 30 minutes, use a calculator if helpful, and review every answer before you submit.";
+    : "Two parts move from financial foundations to portfolio decisions. Allow 15 minutes, use a calculator if helpful, and review every answer before you submit.";
   const beforePrivacy = $("landing").querySelector(".studio-before-privacy");
   if (beforePrivacy) beforePrivacy.textContent = recruitmentLink
     ? "Recruitment answers are handled under the country notice shown before start. Your invitation has its own time allowance and retention period. The service also receives technical request metadata to deliver and protect the site."
-    : "Practice answers stay in this tab until you submit. Scoring returns only your private feedback; no practice record is saved. Recruitment invitations use a separate private flow.";
+    : "Practice answers stay in this tab until you submit. Scoring then returns your private score and an explanation of each answer; no practice record is saved. Recruitment invitations use a separate private flow.";
   const scope = $("landing").querySelector(".welcome-scope");
   if (recruitmentLink) scope.textContent = invitation?.durationMinutes
     ? `15 questions · ${invitation.durationMinutes} minutes`
     : "Personal invitation · time allowance confirmed before start";
-  else scope.textContent = "15 questions · 30 minutes";
+  else scope.textContent = "15 questions · 15 minutes";
   const trigger = $("landing-action");
   trigger.className = "button primary start-practice";
   const canStart = Boolean(invite && config?.enabled && invitation);
@@ -497,7 +505,7 @@ function preflight() {
     ["Assessment", "15 questions across 2 sections"],
     [
       "How answers are used",
-      "The app scores submitted answers against an answer key. A recruiter reviews the result as part of the hiring process. The app makes no hiring decision.",
+      "The app scores submitted answers against an answer key. Correct answers stay hidden while you work. After you submit, you see your score and an explanation of each answer. A recruiter reviews the result as part of the hiring process. The app makes no hiring decision.",
     ],
     [
       "Country for this invitation",
@@ -1139,6 +1147,31 @@ async function expireView() {
     deadlineCheck = false;
   }
 }
+function renderAnswerReview(items) {
+  const wrap = el("section", "answer-review");
+  wrap.setAttribute("aria-label", "Answer explanations");
+  wrap.append(
+    el("h2", "", "Good and bad answers"),
+    el("p", "answer-review-lead", "Each note names the good answer and why the other choices are not. These notes appear only after you submit."),
+  );
+  items.forEach((item, index) => {
+    if (!item || typeof item.prompt !== "string" || typeof item.good !== "string" || typeof item.explanation !== "string") return;
+    const article = el("article", item.matched ? "is-match" : "is-miss");
+    const yours = el("p");
+    yours.append(el("span", "answer-label", "Your answer: "), document.createTextNode(item.yours ?? "No answer"));
+    const good = el("p");
+    good.append(el("span", "answer-label", "Good answer: "), document.createTextNode(item.good));
+    article.append(
+      el("p", "answer-kicker", `Question ${String(index + 1).padStart(2, "0")} · ${item.matched ? "Your answer matches" : "Your answer does not match"}`),
+      el("h3", "prompt", item.prompt),
+      yours,
+      good,
+      el("p", "answer-why", item.explanation),
+    );
+    wrap.append(article);
+  });
+  return wrap;
+}
 function terminal() {
   if (dialog.open) dialog.close();
   switchView("terminal");
@@ -1182,11 +1215,17 @@ function terminal() {
       "p",
       "body-copy",
       done
-        ? "Your answers have been received. Keep your assessment reference if you contact your recruiter. The receipt is available for a limited time."
+        ? "Your answers have been received. Your score and the explanation of each answer are below. Keep your assessment reference if you contact your recruiter. The receipt is available for a limited time."
         : "The recruitment team can review the answers saved before the deadline. Contact your recruiter if you need support.",
     ),
     details,
   );
+  if (done && Number.isInteger(attempt.score) && Number.isInteger(attempt.total)) {
+    const scoreLine = el("p", "result-score", `${attempt.score} of ${attempt.total}`);
+    scoreLine.setAttribute("aria-label", `Score ${attempt.score} of ${attempt.total}`);
+    card.append(scoreLine);
+  }
+  if (done && Array.isArray(attempt.review)) card.append(renderAnswerReview(attempt.review));
   panel.append(card);
   setFocus(heading);
 }
@@ -1300,7 +1339,7 @@ $("open-support").addEventListener("click", () =>
       "body-copy",
       invite || invitation || attempt
         ? "This personal link opens a recruitment assessment governed by the country privacy notice shown before start. The public practice privacy description does not apply here."
-        : "Start practice assessment is open to everyone and needs no sign-in. Your answers stay in this tab until you submit; the service returns a private practice score without saving a practice record or sending it to recruiters.",
+        : "Start practice assessment is open to everyone and needs no sign-in. Your answers stay in this tab until you submit; the service then returns a private score and answer explanations without saving a practice record or sending it to recruiters.",
     ),
     el(
       "p",

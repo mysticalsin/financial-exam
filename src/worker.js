@@ -1,4 +1,4 @@
-import { makePaper, grade } from "./bank.js";
+import { makePaper, grade, reviewPaper } from "./bank.js";
 import { authorizeReviewer, reviewerConfigured } from "./access.js";
 import { handlePractice } from "./practice.js";
 
@@ -85,7 +85,7 @@ function profiles(env) {
 function config(env) {
   const approved = profiles(env);
   const countries = Object.keys(approved).sort();
-  const durationMinutes = Number(env.DURATION_MINUTES ?? 30);
+  const durationMinutes = Number(env.DURATION_MINUTES ?? 15);
   const inviteTtlMinutes = Number(env.INVITE_TTL_MINUTES ?? 30);
   const enabled = env.LIVE_ENABLED === "true" && countries.length > 0 &&
     reviewerConfigured(env) &&
@@ -338,12 +338,14 @@ export default {
 
 function candidateState(record) {
   const active = record.status === "active";
+  const submitted = record.status === "submitted";
   return {
     reference: record.reference, revision: record.revision, status: record.status,
     country: record.country, notice: record.notice,
     deadline: record.deadline, purgeAt: record.purgeAt, startedAt: record.startedAt, submittedAt: record.submittedAt ?? null,
     questions: active ? record.paper.questions : [], answers: active ? record.answers : {},
     total: record.paper.questions.length, answered: Object.keys(record.answers).length,
+    ...(submitted ? { score: record.score, review: reviewPaper(record.paper, record.answers) } : {}),
   };
 }
 
@@ -401,6 +403,7 @@ function operatorRecord(record) {
       question: q.prompt, section: q.section, table: q.table ?? null,
       selected: q.options.filter(o => record.answers[q.id]?.includes(o.id)).map(o => o.text),
       expected: q.options.filter(o => record.paper.key[q.id].includes(o.id)).map(o => o.text),
+      explanation: record.paper.notes?.[q.id] ?? null,
     })),
   };
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { grade, makePaper, makePortfolioCase } from '../src/bank.js';
+import { grade, makePaper, makePortfolioCase, reviewPaper } from '../src/bank.js';
 
 const money = value => Number(value.replace(/[€,\s]/g, ''));
 const amountsIn = text => [...text.matchAll(/€[\d,]+/g)].map(match => money(match[0]));
@@ -76,6 +76,20 @@ test('each private paper preserves all 15 source identities, two sections, opaqu
   assert.equal(ids.size, 75);
   for (const id of ids) assert.match(id, /^[a-f\d-]{36}$/i);
   assert.deepEqual(Object.keys(paper.key).sort(), paper.questions.map(q => q.id).sort());
+  assert.deepEqual(Object.keys(paper.notes).sort(), paper.questions.map(q => q.id).sort());
+  for (const q of paper.questions) {
+    assert.equal(Object.hasOwn(q, 'explanation'), false);
+    assert.ok(paper.notes[q.id].startsWith(`Good answer: ${correctText(paper, q)}. Why the others are not:`));
+  }
+  const review = reviewPaper(paper, paper.key);
+  assert.equal(review.filter(item => item.matched).length, 15);
+  const first = paper.questions[0];
+  const wrongId = first.options.find(option => option.id !== paper.key[first.id][0]).id;
+  const mixed = reviewPaper(paper, { ...paper.key, [first.id]: [wrongId] });
+  assert.equal(mixed[0].matched, false);
+  assert.equal(mixed[0].good, correctText(paper, first));
+  assert.notEqual(mixed[0].yours, mixed[0].good);
+  assert.match(mixed[0].explanation, /Why the others are not:/);
   assert.equal(concepts.length, 15);
   assert.ok(concepts.slice(0, 8).every(q => q.section === 'Foundations'));
   assert.ok(concepts.slice(8).every(q => q.section === 'Applied Reading'));
