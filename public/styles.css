@@ -1513,3 +1513,208 @@ body:has(#landing:not([hidden])) .page-main { background: radial-gradient(ellips
 @media (prefers-reduced-motion: reduce) {
   .practice-option,.practice-question-card { transition: none !important; }
 }
+
+/* Candidate and practice motion. Text stays opaque; decoration moves once. */
+.studio-copy h1,
+.studio-before h2 { position: relative; }
+.studio-copy h1::after,
+.studio-before h2::after {
+  content: "";
+  display: block;
+  height: 3px;
+  margin-top: 12px;
+  border-radius: 99px;
+  background: #f0dc33;
+  transform-origin: left;
+  animation: brand-stroke .7s cubic-bezier(.2,.7,.2,1) both;
+}
+.studio-copy h1::after { width: 72px; }
+.studio-before h2::after { width: 48px; height: 2px; animation-delay: .12s; }
+.studio-ledger.is-visible::after {
+  content: "";
+  position: absolute;
+  inset: -18% auto -18% 0;
+  z-index: -1;
+  width: 38%;
+  background: linear-gradient(100deg, transparent, rgba(248,240,96,.34), transparent);
+  transform: translateX(-150%) skewX(-16deg);
+  animation: banner-sweep 1.15s .18s ease-out both;
+  pointer-events: none;
+}
+.studio-ledger.is-visible .ledger-orbit {
+  animation: orbit-settle 1.15s cubic-bezier(.2,.7,.2,1) both;
+}
+.start-practice span { transition: transform .18s cubic-bezier(.2,.7,.2,1); }
+.start-practice:hover:not(:disabled) span,
+.start-practice:focus-visible span { transform: translateX(3px); }
+.start-practice:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 4px 12px rgba(69,0,105,.18);
+}
+.button { transition: background-color .15s, transform .12s, box-shadow .15s; }
+.button:active:not(:disabled) { transform: translateY(1px); }
+.button.primary:active:not(:disabled) { background: #43006e; }
+.form-card,
+.content-card {
+  position: relative;
+  box-shadow: 0 22px 50px rgba(43,0,88,.07);
+  animation: card-rise .42s cubic-bezier(.2,.7,.2,1) both;
+}
+.form-card::before,
+.content-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 22px;
+  right: 22px;
+  height: 2px;
+  background: linear-gradient(90deg, #f8f060, rgba(248,240,96,0));
+  pointer-events: none;
+}
+.rail {
+  background:
+    linear-gradient(#f8f060, #f8f060) 0 0 / 100% 3px no-repeat,
+    linear-gradient(180deg, #fff, #f7f2fa);
+  box-shadow: 0 16px 40px rgba(43,0,88,.06);
+}
+.rail progress::-webkit-progress-value,
+.rail progress::-moz-progress-bar {
+  background: linear-gradient(90deg, #4d0084, #8a2ad4);
+  transition: inline-size .35s cubic-bezier(.2,.7,.2,1), width .35s cubic-bezier(.2,.7,.2,1);
+}
+.option,
+.review-item,
+.preflight-tab,
+.example-choice,
+.practice-filter,
+.practice-nav-question {
+  transition: border-color .16s, background-color .16s, box-shadow .16s, color .16s;
+}
+.option:hover { background: #fcfaff; }
+.option:active,
+.practice-option:active,
+.example-choice:active,
+.preflight-tab:active,
+.review-item:active,
+.practice-filter:active,
+.practice-nav-question:active:not(:disabled) {
+  background: #f4eaf8;
+  box-shadow: inset 0 2px 0 rgba(43,0,88,.14);
+}
+.option:has(input:checked) {
+  border-color: #6800ad;
+  background: linear-gradient(105deg, #f6eef9, #fff);
+  box-shadow: inset 4px 0 0 #6800ad;
+  animation: choice-settle .28s cubic-bezier(.2,.7,.2,1);
+}
+.save-line.is-saved {
+  color: #4a1868;
+  font-weight: 700;
+  padding-left: 10px;
+  box-shadow: inset 3px 0 0 #f0dc33;
+}
+.receipt-mark { animation: receipt-seal .5s cubic-bezier(.2,.7,.2,1) both; }
+.clock.ending span { color: var(--warn); }
+dialog[open] { animation: dialog-rise .28s cubic-bezier(.2,.7,.2,1) both; }
+dialog::backdrop { background: rgba(23, 10, 32, .62); }
+.paper-masthead { position: relative; overflow: hidden; }
+.paper-brand,
+.practice-progress-shell { position: relative; z-index: 1; }
+.paper-masthead::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  height: 2px;
+  background: #f8f060;
+  transform-origin: left;
+  animation: brand-stroke .7s ease-out both;
+  pointer-events: none;
+}
+.paper-masthead::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 0;
+  width: 28%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.14), transparent);
+  transform: translateX(-140%) skewX(-18deg);
+  animation: banner-sweep 1.05s .05s ease-out both;
+  pointer-events: none;
+}
+.paper-instructions { box-shadow: 0 8px 24px rgba(43,0,88,.04); }
+.practice-part-header { position: relative; }
+.practice-part-header::after {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  height: 2px;
+  background: rgba(248,240,96,.85);
+  transform-origin: left;
+  animation: brand-stroke .55s ease-out both;
+  pointer-events: none;
+}
+.practice-option:has(input:checked) .option-letter {
+  color: #4f007d;
+}
+.practice-nav-question.is-answered::after { animation: dot-pop .32s cubic-bezier(.2,.7,.2,1) both; }
+.score-band.is-active { animation: band-settle .45s cubic-bezier(.2,.7,.2,1) both; }
+body.practice-active {
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(127,0,218,.08), transparent 34%),
+    #f4f1f6;
+}
+@keyframes orbit-settle {
+  from { transform: rotate(-10deg) scale(.94); opacity: .35; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes choice-settle {
+  from { transform: scale(.985); }
+  to { transform: none; }
+}
+@keyframes receipt-seal {
+  from { transform: scale(.88); }
+  to { transform: none; }
+}
+@keyframes dialog-rise {
+  from { transform: translateY(8px); }
+  to { transform: none; }
+}
+@keyframes dot-pop {
+  from { transform: scale(.2); }
+  to { transform: scale(1); }
+}
+@keyframes band-settle {
+  from { box-shadow: inset 0 0 0 0 #7100b6; }
+  to { box-shadow: inset 0 0 0 1px #7100b6; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-copy h1::after,
+  .studio-before h2::after,
+  .studio-ledger.is-visible::after,
+  .studio-ledger.is-visible .ledger-orbit,
+  .form-card,
+  .content-card,
+  .option:has(input:checked),
+  .receipt-mark,
+  .clock.ending span,
+  dialog[open],
+  .paper-masthead::before,
+  .paper-masthead::after,
+  .practice-part-header::after,
+  .practice-nav-question.is-answered::after,
+  .score-band.is-active {
+    animation: none !important;
+  }
+  .start-practice:hover:not(:disabled),
+  .start-practice:active:not(:disabled),
+  .start-practice:hover:not(:disabled) span,
+  .start-practice:focus-visible span,
+  .button:active:not(:disabled) {
+    transform: none;
+  }
+}

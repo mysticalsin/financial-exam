@@ -845,6 +845,12 @@ function refreshSave() {
   const fixes = $("sync-actions");
   fixes.replaceChildren();
   status.classList.toggle("error", Boolean(draft && !saving));
+  status.classList.toggle(
+    "is-saved",
+    !saving &&
+      !draft &&
+      Boolean(attempt.answers[attempt.questions[current].id]?.length),
+  );
   if (saving) {
     status.textContent = "Saving answer…";
     return;

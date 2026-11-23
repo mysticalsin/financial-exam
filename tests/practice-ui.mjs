@@ -114,6 +114,8 @@ try {
   assert.deepEqual(await page.locator('.ledger-row .ledger-track i').evaluateAll(bars=>bars.map(bar=>getComputedStyle(bar).getPropertyValue('--ledger-width').trim())),['100%','65%','35%','15%','20%'],'ledger bars use the P&L proportions');
   await page.locator('.studio-ledger.is-visible').waitFor();
   assert.equal(await page.locator('.studio-ledger .ledger-track i').evaluateAll(bars=>bars.filter(bar=>getComputedStyle(bar).animationName==='ledger-settle').length),5,'the five-row ledger animates on first reveal');
+  assert.equal(await page.locator('#landing-title').evaluate(node=>getComputedStyle(node,'::after').animationName),'brand-stroke','the title rule draws once and the heading stays readable');
+  assert.equal(await page.locator('.studio-ledger.is-visible').evaluate(node=>getComputedStyle(node,'::after').animationName),'banner-sweep','a single highlight crosses the ledger');
   assert.deepEqual(await page.locator('.ledger-foot').evaluate(node=>Array.from(node.children).filter(child=>!child.classList.contains('ledger-foot-rule')).map(child=>child.textContent)),['GROSS MARGIN','35%','CONTRIBUTION','20%'],'gross and contribution margins are labeled accurately');
   assert.equal(await page.evaluate(()=>sessionStorage.length+localStorage.length),0,'practice writes no browser storage');
   await page.getByRole('button',{name:/Start practice assessment/}).click();
@@ -165,6 +167,8 @@ try {
   await page.emulateMedia({reducedMotion:'reduce'});
   const motion=await page.locator('.studio-ledger .ledger-track i').first().evaluate(node=>getComputedStyle(node).animationDuration);
   assert.ok(motion==='0.01ms'||motion==='0s'||motion==='1e-05s',`reduced-motion mode suppresses ledger animation (${motion})`);
+  const quietTitle=await page.locator('#landing-title').evaluate(node=>getComputedStyle(node,'::after').animationDuration);
+  assert.ok(quietTitle==='0.01ms'||quietTitle==='0s'||quietTitle==='1e-05s',`reduced-motion mode shows the title rule in its final position (${quietTitle})`);
   assert.equal(await page.locator('#practice-nav').isVisible(),true,'desktop question navigator is available');
   assert.equal(await page.locator('#practice-jump').isVisible(),true,'labeled question jump control is available');
   assert.deepEqual(await page.locator('[data-practice-filter]').evaluateAll(items=>items.map(item=>[item.dataset.practiceFilter,item.querySelector('[data-filter-count]').textContent])),[['all','15'],['answered','0'],['unanswered','15']]);
