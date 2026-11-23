@@ -1,7 +1,15 @@
 # Mantu Financial Test
 
 <p align="center">
-  <img src="docs/screenshots/studio-tour.gif" alt="Studio tour of the practice paper: homepage, guide, and portfolio question" width="960" />
+  <img src="docs/assets/home-to-practice.gif" alt="From the homepage through the practice guide into the paper" width="880" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/question-answer.gif" alt="A question enters and an answer is selected" width="880" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/score-receipt.gif" alt="Submit the paper and the private score receipt arrives" width="880" />
 </p>
 
 ## What this is / how to run
