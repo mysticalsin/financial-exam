@@ -231,6 +231,11 @@ async function exercise() {
   status(second, 200, 'second invitation');
   const cookieB = sessionCookie(second);
   const secondPaper = second.body.attempt;
+  assert.notDeepEqual(
+    initial.questions.map(question => question.prompt).sort(),
+    secondPaper.questions.map(question => question.prompt).sort(),
+    'two attempts receive different question sets'
+  );
   const [firstQ] = initial.questions;
   const [otherQ] = secondPaper.questions;
   status(await answer(cookieA, a.reference, initial.revision, otherQ.id, otherQ.options[0].id), 422, 'question scoped to issued paper');
@@ -312,6 +317,14 @@ async function exercise() {
   assert.equal(result.score, expectedScore, 'grade matches an independent count from original selections and closed review');
   assert.equal(receipt.score, expectedScore);
   assert.equal(receipt.review.filter(item => item.outcome === 'good').length, expectedScore);
+  const startPayload = JSON.stringify(initial);
+  const midExamPayload = JSON.stringify(beforeRestart);
+  for (const item of receipt.review) {
+    assert.equal(startPayload.includes(item.explanation), false, 'start payload leaked an explanation');
+    assert.equal(midExamPayload.includes(item.explanation), false, 'mid-exam payload leaked an explanation');
+    assert.equal(startPayload.includes('"key":'), false);
+    assert.equal(midExamPayload.includes('"correct":'), false);
+  }
   status(await review(a.reference, { method: 'DELETE' }), 200, 'erase request');
   status(await review(a.reference), 404, 'deleted operator export');
   assert.equal(status(await view(cookieA, a.reference), 200, 'deleted candidate session').attempt, null);
