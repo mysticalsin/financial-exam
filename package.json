@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "wrangler dev scripts/local-entry.js --local --ip 127.0.0.1",
     "test": "node --test tests/*.test.js",
+    "test:stress": "node --test --test-concurrency=1 tests/stress.test.js tests/random.test.js",
+    "profile:hot-path": "node scripts/hot-path-profile.mjs",
     "test:integration": "node tests/integration.mjs",
     "test:candidate-ui": "node tests/candidate-ui.mjs",
     "test:practice-ui": "node tests/practice-ui.mjs",

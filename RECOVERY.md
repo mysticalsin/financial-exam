@@ -32,7 +32,7 @@ Screenshots / studio mp4 under docs/screenshots were omitted (large binaries).
 | Durable Object class source | **Partial** — DO logic lives inside modular `src/worker.js` (Assessment namespace via `env.ATTEMPTS`); no separate DO file |
 | Question bank size | **Generative** templates in `src/bank.js` (~dozen item factories + random params), **not** a static 100–200 curated bank yet |
 | 15-minute timer | Config still defaults to 30; needs env/`DURATION_MINUTES=15` |
-| End-only scoring + explanations + luxurious UI + Rust hot paths + stress/perfection bar | **Project backlog** (not implemented in this recovery commit) |
+| End-only scoring + explanations + luxurious UI + Rust hot paths + stress/perfection bar | Stress coverage for both packs is in `tests/stress.test.js`. Scoring stays in JavaScript; see [docs/HOT-PATH.md](docs/HOT-PATH.md). Explanations, timer default, bank size, and the rest of the perfection bar remain open. |
 
 ## Tony requirements (Project backlog — do not treat as done)
 
@@ -41,6 +41,6 @@ Screenshots / studio mp4 under docs/screenshots were omitted (large binaries).
 - Score + right/wrong explanations **only at the end** (no per-question drip)
 - Rich / luxurious UI + animations
 - Uncheatable (server-side keys, no answer leakage)
-- Full stress tests every pack; refactor for efficiency; Rust on hot paths where it helps UX
+- Full stress tests every pack are in `tests/stress.test.js`. Paper randomness is batched. Rust/Wasm stays a gated plan in `docs/HOT-PATH.md` until a Workers CPU profile shows integer case math is a material share of CPU.
 - Perfection bar: bug-free, hyperfluid, E2E, deep QA, enterprise-ready security
 - No live Worker deploy from recovery alone
