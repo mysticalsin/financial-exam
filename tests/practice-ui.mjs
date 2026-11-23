@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdir,readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {chromium} from 'playwright';
-import {makePracticePaper} from '../src/practice.js';
+import {makePracticePaper, reviewPractice} from '../src/practice.js';
 
 const root = new URL('../public/', import.meta.url);
 const calls = [];
@@ -21,7 +21,7 @@ const server = createServer(async (request,response) => {
       const now=Date.now();
       const starts=startedPapers.length+1;
       const challenge=`practice-challenge-${starts}`;
-      const deadline=now+(starts===5?10000:30*60000);
+      const deadline=now+(starts===5?10000:15*60000);
       startedPapers.push({paper,challenge,deadline});
       return json(200,{questions:paper.questions,referenceTable:paper.referenceTable,challenge,serverNow:now,deadline});
     }
@@ -31,7 +31,8 @@ const server = createServer(async (request,response) => {
       const started=startedPapers.find(item=>item.challenge===data.challenge);
       const answered=Object.keys(data.answers||{}).length;
       const score=started?Object.entries(data.answers||{}).filter(([id,choice])=>started.paper.key[id]===choice).length:0;
-      return json(200,{score,total:15,answered,submittedAt:Date.now()});
+      const review=started?reviewPractice(started.paper,data.answers):[];
+      return json(200,{score,total:15,answered,submittedAt:Date.now(),review});
     }
     return json(404,{error:'Unexpected API route'});
   }
@@ -64,6 +65,10 @@ const assertScore = async (page, expectedScore, band) => {
   assert.ok((await page.locator('.result-reflection').innerText()).length>12,'result includes one band-appropriate next-practice prompt');
   assert.equal(await page.locator(`.score-band[data-score-band="${band.toLowerCase()}"]`).getAttribute('aria-current'),'true');
   assert.equal(await page.locator('.score-band[data-score-band]').count(),4);
+  assert.equal(await page.locator('.answer-review article').count(),15);
+  assert.equal(await page.locator('.answer-review article.is-match').count(),expectedScore);
+  assert.equal(await page.locator('.answer-review article.is-miss').count(),15-expectedScore);
+  assert.match(await page.locator('.answer-review').innerText(),/Why the others are not:/);
   assert.match(await page.locator('body').innerText(),/not (?:used for hiring|shared with recruiters)|not a hiring assessment/i);
 };
 
@@ -102,7 +107,7 @@ try {
   assert.equal(await page.locator('#practice-intro').isVisible(),true);
   assert.equal((await page.locator('#landing-title').innerText()).replace(/\s+/g,' ').trim(),'Financial Test');
   assert.match(await page.locator('.studio-before').innerText(),/Before you start/);
-  assert.match(await page.locator('.welcome-scope').innerText(),/15 questions.*30 minutes/i);
+  assert.match(await page.locator('.welcome-scope').innerText(),/15 questions.*15 minutes/i);
   assert.match(await page.locator('#practice-intro').innerText(),/Calculator use is fine/);
   assert.match(await page.locator('#practice-intro').innerText(),/Review and change answers before submitting/);
   assert.equal(await page.locator('#practice-intro input').count(),0,'practice welcome asks for no identity fields');
@@ -128,7 +133,7 @@ try {
   assert.equal(startedPapers.length,0,'the optional warm-up stays local and untimed');
   await page.getByRole('button',{name:'Your paper'}).click();
   assert.equal(await page.locator('#practice-begin').isVisible(),true,'the begin action remains available after optional guidance');
-  await page.getByRole('button',{name:'Start 30-minute practice'}).click();
+  await page.getByRole('button',{name:'Start 15-minute practice'}).click();
   await page.locator('.practice-question-card').first().waitFor();
   const originalPaper=startedPapers[0].paper;
   assert.equal(await page.locator('.practice-question-card').count(),15,'all questions appear together');
@@ -152,6 +157,8 @@ try {
   for(let q=9;q<=13;q++) assert.equal(await page.locator(`.practice-question-card[data-question-id="practice-q${q}"] .reference-cue`).count(),1,`Q${q} points to the shared portfolio figures`);
   assert.equal(await page.locator('.practice-question-card[data-question-id="practice-q12"] .practice-table').count(),1,'Q12 keeps its consultant comparison table');
   assert.equal(await page.locator('.practice-question-card[data-question-id="practice-q15"] .practice-table').count(),1,'Q15 keeps its portfolio comparison table');
+  assert.equal(await page.locator('.answer-review').count(),0,'the paper does not explain answers before submission');
+  assert.doesNotMatch(await page.locator('#practice-assessment').innerText(),/Why the others are not:/);
   assert.equal(await page.locator('.practice-question-card input[type="radio"]').count(),60,'four native single-choice answers appear for each question');
   assert.equal(await page.locator('.practice-question-card fieldset').count(),15,'answer options are grouped by question');
   assert.ok(await page.locator('#practice-submit').isDisabled());
@@ -220,7 +227,7 @@ try {
   const late=await context.newPage();
   await late.goto(origin+'/');
   await late.getByRole('button',{name:/Start practice assessment/}).click();
-  await late.getByRole('button',{name:'Start 30-minute practice'}).click();
+  await late.getByRole('button',{name:'Start 15-minute practice'}).click();
   await late.locator('.practice-question-card').first().waitFor();
   const latePaper=startedPapers.at(-1).paper;
   for(const question of latePaper.questions) await choose(late,question,latePaper.key[question.id]);

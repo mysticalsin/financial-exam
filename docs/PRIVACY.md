@@ -14,7 +14,7 @@ Public practice is a separate self-study activity. It does not require a recruit
 
 Practice answers and progress remain in the current page's memory until submission or page exit. On submission, the page sends the selected option IDs with an encrypted challenge. The Worker decrypts the challenge, grades the selections, and returns aggregate score information. It writes no answer or score record to R2 or Durable Object storage, sets no assessment cookie, and does not record practice answers in the browser's storage. A fresh paper can be started; a valid challenge can be scored again until it expires.
 
-The challenge is encrypted with the separate Worker secret `PRACTICE_KEY` and expires 30 minutes after issue. The in-page score is cleared after up to 30 minutes. The application does not identify the person taking practice, but Cloudflare still processes requests and the Worker uses short-lived network rate-limit metadata. This is not a claim that the service or its infrastructure receives no technical metadata. If practice is later used to assess applicants, stop and complete the applicable controller, notice, access and retention review first.
+The challenge is encrypted with the separate Worker secret `PRACTICE_KEY` and expires 15 minutes after issue. The in-page score is cleared after up to 30 minutes. The application does not identify the person taking practice, but Cloudflare still processes requests and the Worker uses short-lived network rate-limit metadata. This is not a claim that the service or its infrastructure receives no technical metadata. If practice is later used to assess applicants, stop and complete the applicable controller, notice, access and retention review first.
 
 ## Optional integrity review for recruitment
 

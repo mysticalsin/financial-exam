@@ -17,7 +17,7 @@ function fixture() {
   const limiterKeys = [];
   const env = {
     LIVE_ENABLED: "true", PRIVACY_COUNTRY: "FR", PRIVACY_NOTICE: { ...notice }, OPS_TOKEN: random(),
-    ACCESS_ISSUER: "https://synthetic-test.cloudflareaccess.com", ACCESS_AUD: "a".repeat(64), DURATION_MINUTES: 30,
+    ACCESS_ISSUER: "https://synthetic-test.cloudflareaccess.com", ACCESS_AUD: "a".repeat(64), DURATION_MINUTES: 15,
     RATE_LIMITER: { async limit({ key }) { limiterKeys.push(key); return { success: true }; } },
     ASSETS: { async fetch() { return new Response("Test page"); } },
     RECORDS: {
@@ -103,7 +103,9 @@ test("preview has a public config and static assets with security headers; incom
   const { req, env, admin } = fixture();
   delete env.PRIVACY_NOTICE.contact;
   const response = await req("/api/config");
-  assert.equal((await response.json()).enabled, false);
+  const config = await response.json();
+  assert.equal(config.enabled, false);
+  assert.equal(config.durationMinutes, 15);
   assert.equal((await req("/api/ops/invites", "POST", {}, admin)).status, 503);
   assert.equal((await req("/api/session").then(r => r.json())).attempt, null);
   assert.equal(response.headers.get("Cache-Control"), "private, no-store");
@@ -157,6 +159,8 @@ test("invitation is single-use, retriable with the same claim, preserves variant
   assert.equal(a.attempt.questions.length, 15);
   assert.equal(JSON.stringify(a.attempt).includes('"key":'), false);
   assert.equal(JSON.stringify(a.attempt).includes('"correct":'), false);
+  assert.equal(a.attempt.score, undefined);
+  assert.equal(a.attempt.review, undefined);
   assert.equal((await f.req("/api/start", "POST", { ...params, claim: random() })).status, 403);
   assert.equal((await f.req("/api/session", "GET", undefined, { cookie: a.cookie })).status, 400,
     "a cookie alone cannot select a candidate record");
@@ -198,7 +202,7 @@ test("only the owner can save, with revision checks, bounded choices, clearing a
   assert.equal(cleared.attempt.answered, 0);
 });
 
-test("server computes score once and exports human-readable results, with no score in candidate receipt", async () => {
+test("server computes score once and reveals the score and explanations only after submission", async () => {
   const f = fixture();
   const invite = await f.issue();
   const a = await f.start(invite);
@@ -215,8 +219,13 @@ test("server computes score once and exports human-readable results, with no sco
   assert.equal(final.status, "submitted");
   assert.equal(final.answered, 15);
   assert.equal(final.purgeAt, final.submittedAt + 30 * 60000);
-  assert.equal(final.score, undefined);
+  assert.equal(final.score, 15);
+  assert.equal(final.review.length, 15);
+  assert.ok(final.review.every(item => item.matched && item.yours === item.good && item.explanation.startsWith(`Good answer: ${item.good}. Why the others are not:`)));
   assert.deepEqual(final.questions, []);
+  assert.equal(JSON.stringify(final).includes('"key":'), false);
+  assert.equal(JSON.stringify(final).includes('"notes":'), false);
+  assert.equal(JSON.stringify(final).includes('"correct":'), false);
   assert.deepEqual((await (await submit()).json()).attempt, final);
   const question = a.attempt.questions[0];
   const closed = await f.req("/api/answers", "PUT", { reference: invite.reference, questionId: question.id, choices: [], revision: final.revision }, { cookie: a.cookie });
@@ -227,6 +236,7 @@ test("server computes score once and exports human-readable results, with no sco
   assert.equal(Object.hasOwn(result, "copiedQuestionCount"), false);
   assert.equal(result.responses.length, 15);
   assert.equal(result.responses.every(r => r.selected[0] === r.expected[0]), true);
+  assert.ok(result.responses.every(r => r.explanation.startsWith(`Good answer: ${r.expected[0]}. Why the others are not:`)));
   assert.equal(result.notice.version, notice.version);
   assert.equal(result.inviteHash, undefined);
   await f.req(exportPath, "DELETE", undefined, f.admin);
@@ -244,6 +254,8 @@ test("absolute deadline closes edits and retains saved work; read-time expiry an
   const closed = await (await f.req("/api/session", "GET", undefined, { cookie: a.cookie, reference: inv.reference })).json();
   assert.equal(closed.attempt.status, "expired");
   assert.deepEqual(closed.attempt.questions, []);
+  assert.equal(closed.attempt.score, undefined);
+  assert.equal(closed.attempt.review, undefined);
   f.records.get(inv.reference).record.purgeAt = Date.now() - 1;
   const purged = await (await f.req("/api/session", "GET", undefined,
     { cookie: a.cookie, reference: inv.reference })).json();

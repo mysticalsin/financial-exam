@@ -12,6 +12,7 @@ let score = null;
 let total = 0;
 let resultAnswered = 0;
 let resultUntil = 0;
+let answerReview = [];
 let requestVersion = 0;
 let submissionPending = false;
 let activeFilter = "all";
@@ -79,6 +80,7 @@ function clearPractice() {
   total = 0;
   resultAnswered = 0;
   resultUntil = 0;
+  answerReview = [];
   submissionPending = false;
   activeFilter = "all";
   currentQuestionIndex = 0;
@@ -100,7 +102,8 @@ function isValidQuestion(question) {
     question.options.every((option) => typeof option.id === "string" && typeof option.text === "string") &&
     new Set(question.options.map((option) => option.id)).size === question.options.length &&
     (!question.table || validTable(question.table)) &&
-    (question.usesReferenceTable === undefined || typeof question.usesReferenceTable === "boolean");
+    (question.usesReferenceTable === undefined || typeof question.usesReferenceTable === "boolean") &&
+    !["correct", "explanation", "good", "key", "expected", "matched", "notes", "review"].some((name) => Object.hasOwn(question, name) || question.options.some((option) => Object.hasOwn(option, name)));
 }
 async function api(path, body) {
   const controller = new AbortController();
@@ -137,7 +140,8 @@ async function start() {
     if (!Array.isArray(data.questions) || data.questions.length !== 15 || !data.questions.every(isValidQuestion) ||
         new Set(data.questions.map((q) => q.id)).size !== 15 || typeof data.challenge !== "string" || !data.challenge ||
         !Number.isFinite(data.serverNow) || !Number.isFinite(data.deadline) || data.deadline <= data.serverNow ||
-        (data.referenceTable && !validTable(data.referenceTable))) {
+        (data.referenceTable && !validTable(data.referenceTable)) ||
+        ["review", "score", "key", "notes", "explanation"].some((name) => Object.hasOwn(data, name))) {
       throw new Error("The practice assessment could not be opened. Try again.");
     }
     questions = data.questions;
@@ -170,7 +174,7 @@ function showPreflight() {
   [["01–08", "Foundations", "Core financial concepts"], ["09–15", "Applied reading", "Portfolio P&L decisions"]].forEach(([range, label, detail]) => {
     const part = el("div", "preflight-part"); part.append(el("span", "preflight-range", range), el("strong", "", label), el("small", "", detail)); overview.append(part);
   });
-  const note = el("p", "preflight-lead", "Take 30 minutes. Calculator use is fine, and every answer stays editable until you submit. A refresh clears the paper; your score is shown only here, and no practice record is saved.");
+  const note = el("p", "preflight-lead", "Take 15 minutes. Calculator use is fine, and every answer stays editable until you submit. Correct answers stay hidden until then. A refresh clears the paper; your score and explanations are shown only after you submit, and no practice record is saved.");
   paperPanel.append(overview, note);
   const examplePanel = el("section", "preflight-panel", ""); examplePanel.id = "preflight-example-panel"; examplePanel.setAttribute("aria-labelledby", exampleTab.id); examplePanel.hidden = true;
   examplePanel.append(el("p", "example-label", "A QUICK WARM-UP"), el("p", "example-prompt", "€100 revenue − €60 cost. What is the gross margin in euros?"));
@@ -193,7 +197,7 @@ function showPreflight() {
   }
   const actions = el("div", "action-row");
   actions.append(button("Not now", "button secondary", () => dialog.close()));
-  const begin = button("Start 30-minute practice", "button primary", () => { dialog.close(); start(); });
+  const begin = button("Start 15-minute practice", "button primary", () => { dialog.close(); start(); });
   begin.id = "practice-begin";
   actions.append(begin);
   $("dialog-body").replaceChildren(title, tabs, paperPanel, examplePanel, actions);
@@ -278,7 +282,7 @@ function progressHeader() {
 function timerRow() {
   const row = el("div", "practice-timer-row");
   row.append(el("span", "", "Time remaining"));
-  const time = el("time", "practice-timer", "30:00"); time.id = "practice-timer"; time.setAttribute("role", "timer");
+  const time = el("time", "practice-timer", "15:00"); time.id = "practice-timer"; time.setAttribute("role", "timer");
   row.append(time, el("span", "timer-note", "Answers stay in this tab until you submit"));
   return row;
 }
@@ -439,7 +443,7 @@ function renderPaper(focus = false) {
   const frame = el("div", "practice-paper-frame");
   const paper = el("div", "practice-paper");
   const intro = el("section", "paper-instructions");
-  intro.append(el("p", "eyebrow", "15 QUESTIONS · 30 MINUTES"), el("p", "", "Choose one answer for every question. You can change selections anywhere on this page before submitting. Calculator use is fine."));
+  intro.append(el("p", "eyebrow", "15 QUESTIONS · 15 MINUTES"), el("p", "", "Choose one answer for every question. You can change selections anywhere on this page before submitting. Calculator use is fine. Correct answers stay hidden until you submit."));
   paper.append(intro, partHeader("foundations", "Part 1 · Foundations", "01 — 08"));
   questions.slice(0, 8).forEach((q, i) => paper.append(renderQuestion(q, i)));
   paper.append(partHeader("applied", "Part 2 · Applied Reading", "09 — 15"));
@@ -498,10 +502,11 @@ async function submitPractice() {
     const result = await api("submit", { challenge, answers: { ...answers } });
     if (version !== requestVersion) return;
     if (!Number.isSafeInteger(result.score) || !Number.isSafeInteger(result.total) || result.total !== questions.length ||
-        !Number.isSafeInteger(result.answered) || !Number.isFinite(result.submittedAt) || result.score < 0 || result.score > result.total || result.answered !== questions.length) {
+        !Number.isSafeInteger(result.answered) || !Number.isFinite(result.submittedAt) || result.score < 0 || result.score > result.total || result.answered !== questions.length ||
+        !validReview(result.review, questions)) {
       throw new Error("The practice score could not be confirmed. Try again.");
     }
-    score = result.score; total = result.total; resultAnswered = result.answered;
+    score = result.score; total = result.total; resultAnswered = result.answered; answerReview = result.review;
     clockBase = { server: result.submittedAt, local: performance.now() };
     resultUntil = result.submittedAt + 30 * 60 * 1000;
     questions = []; referenceTable = null; answers = Object.create(null); challenge = ""; deadline = 0;
@@ -512,6 +517,40 @@ async function submitPractice() {
     if (clockBase && serverTime() >= deadline) return expirePractice();
     updateProgress(); showStatus(error.message || "The practice score could not be confirmed. Your answers remain in this page. Try again.");
   }
+}
+function validReview(review, paper) {
+  if (!Array.isArray(review) || review.length !== paper.length) return false;
+  return review.every((item, index) => {
+    const question = paper[index];
+    const selected = question.options.find((option) => option.id === answers[question.id]);
+    return item && item.prompt === question.prompt && typeof item.good === "string" &&
+      question.options.some((option) => option.text === item.good) &&
+      (item.yours === null || (typeof item.yours === "string" && question.options.some((option) => option.text === item.yours))) &&
+      (selected?.text ?? null) === item.yours && typeof item.matched === "boolean" &&
+      item.matched === (item.yours !== null && item.yours === item.good) &&
+      typeof item.explanation === "string" && item.explanation.length > 20;
+  });
+}
+function renderAnswerReview(items) {
+  const wrap = el("section", "answer-review");
+  wrap.setAttribute("aria-label", "Answer explanations");
+  wrap.append(el("h2", "", "Good and bad answers"), el("p", "answer-review-lead", "Each note names the good answer and why the other choices are not. These notes appear only after you submit."));
+  items.forEach((item, index) => {
+    const article = el("article", item.matched ? "is-match" : "is-miss");
+    const yours = el("p");
+    yours.append(el("span", "answer-label", "Your answer: "), document.createTextNode(item.yours ?? "No answer"));
+    const good = el("p");
+    good.append(el("span", "answer-label", "Good answer: "), document.createTextNode(item.good));
+    article.append(
+      el("p", "answer-kicker", `Question ${String(index + 1).padStart(2, "0")} · ${item.matched ? "Your answer matches" : "Your answer does not match"}`),
+      el("h3", "prompt", item.prompt),
+      yours,
+      good,
+      el("p", "answer-why", item.explanation),
+    );
+    wrap.append(article);
+  });
+  return wrap;
 }
 function renderResult() {
   phase = "result"; showWorkspace();
@@ -551,7 +590,7 @@ function renderResult() {
   layout.append(scorePanel, detailPanel);
   const actions = el("div", "result-actions");
   actions.append(button("Retake practice assessment", "button primary", start), button("Back to overview", "button secondary", () => { clearPractice(); phase = "idle"; showHome(); }));
-  card.append(top, layout, el("p", "result-copy", "This practice score is shown only here. It is not a hiring assessment and is not shared with recruiters."), actions);
+  card.append(top, layout, renderAnswerReview(answerReview), el("p", "result-copy", "This practice score and these explanations are shown only after you submit. They are not a hiring assessment and are not shared with recruiters."), actions);
   panel.replaceChildren(card);
   window.scrollTo({ top: 0, behavior: "instant" });
   heading.focus({ preventScroll: true });
@@ -568,7 +607,7 @@ function updateClock() {
   if ((phase === "paper" || phase === "submitting") && clockBase && serverTime() >= deadline) { expirePractice(); return; }
   if (phase === "result" && resultUntil && serverTime() >= resultUntil) {
     clearPractice(); phase = "expired"; showWorkspace();
-    panel.replaceChildren(el("section", "practice-expired", "Your practice score has been cleared."), button("Start a new practice assessment", "button primary", start)); return;
+    panel.replaceChildren(el("section", "practice-expired", "Your practice result has been cleared."), button("Start a new practice assessment", "button primary", start)); return;
   }
   const timer = $("practice-timer");
   if (timer && clockBase && deadline) {
