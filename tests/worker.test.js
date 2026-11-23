@@ -653,6 +653,49 @@ test("four expanded integrity categories have separate deduplication, strict sco
   assert.equal(stored(), undefined);
 });
 
+test("two attempts receive different question sets and keys stay off mid-exam payloads", async () => {
+  const { HIRING_BANK } = await import("../src/bank.js");
+  assert.ok(Array.isArray(HIRING_BANK) && HIRING_BANK.length >= 150);
+  const bankPrompts = new Set(HIRING_BANK.map(item => item.prompt));
+  const f = fixture();
+  const first = await f.start(await f.issue());
+  const second = await f.start(await f.issue());
+  const prompts = attempt => attempt.questions.map(question => question.prompt).sort();
+  assert.notDeepEqual(prompts(first.attempt), prompts(second.attempt));
+  for (const started of [first, second]) {
+    assert.equal(started.attempt.questions.length, 15);
+    assert.equal(started.attempt.score, undefined);
+    assert.equal(started.attempt.review, undefined);
+    assert.equal(started.attempt.deadline - started.attempt.startedAt, 15 * 60000);
+    const body = JSON.stringify(started.attempt);
+    assert.equal(body.includes('"key":'), false);
+    assert.equal(body.includes('"correct":'), false);
+    assert.equal(body.includes('"explanation":'), false);
+    assert.equal(body.includes('"explanations":'), false);
+    const paper = f.records.get(started.attempt.reference).record.paper;
+    for (const question of started.attempt.questions) {
+      assert.ok(bankPrompts.has(question.prompt));
+      assert.equal(Object.hasOwn(question, "correct"), false);
+      assert.equal(Object.hasOwn(question, "explanations"), false);
+      const pair = paper.explanations[question.id];
+      assert.equal(body.includes(pair.good), false);
+      assert.equal(body.includes(pair.bad), false);
+    }
+    const question = started.attempt.questions[0];
+    const saved = await f.req("/api/answers", "PUT", {
+      reference: started.attempt.reference, questionId: question.id, choices: [question.options[0].id], revision: started.attempt.revision,
+    }, { cookie: started.cookie });
+    assert.equal(saved.status, 200);
+    const savedBody = JSON.stringify(await saved.json());
+    assert.equal(savedBody.includes('"key":'), false);
+    assert.equal(savedBody.includes('"correct":'), false);
+    assert.equal(savedBody.includes('"explanation":'), false);
+    assert.equal(savedBody.includes(paper.explanations[question.id].good), false);
+    assert.equal(savedBody.includes(paper.explanations[question.id].bad), false);
+    assert.equal(savedBody.includes('"score":'), false);
+  }
+});
+
 test("new-mode expiry compacts to four counters and retains the existing final purge", async () => {
   const f = fixture();
   const { attempt, reference, signal, stored, review } = await startWithExpandedReview(f);
