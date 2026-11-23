@@ -1,4 +1,6 @@
 // This module and each paper's grading key belong in the Worker only.
+import { createPaperRng } from "./random.js";
+
 const euroFormatter = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 0 });
 const euros = value => '€' + euroFormatter.format(value);
 const percent = value => Number(value.toFixed(1)) + '%';
@@ -10,26 +12,6 @@ const consultantMarginRates = [25, 30, 35, 40, 45, 50, 55];
 const bmRevenues = [200000, 250000, 300000, 350000, 400000, 450000, 500000, 600000, 700000, 800000];
 const bmMarginRates = [30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50];
 
-function indexBelow(limit) {
-  const range = 0x100000000;
-  const cutoff = range - range % limit;
-  const word = new Uint32Array(1);
-  do { crypto.getRandomValues(word); } while (word[0] >= cutoff);
-  return word[0] % limit;
-}
-
-const pick = values => values[indexBelow(values.length)];
-const pickInt = (minimum, maximum, step = 1) => minimum + indexBelow((maximum - minimum) / step + 1) * step;
-
-function shuffle(values) {
-  const result = [...values];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = indexBelow(i + 1);
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
-}
-
 function item(prompt, correct, ...alternatives) {
   const choices = [correct, ...alternatives];
   if (choices.length !== 4 || new Set(choices).size !== 4) throw new Error('Each hiring question must have four distinct choices.');
@@ -38,18 +20,18 @@ function item(prompt, correct, ...alternatives) {
 
 function table(headers, rows) { return { headers, rows }; }
 
-function dailyCase() {
-  const billing = pick(dailyBillings);
-  const costRate = pick(dailyCostRates);
+function dailyCase(rng) {
+  const billing = rng.pick(dailyBillings);
+  const costRate = rng.pick(dailyCostRates);
   const cost = billing * costRate / 100;
   return { billing, cost, costRate, gross: billing - cost };
 }
 
-function teamCase() {
-  const headcount = pick([3, 4, 5, 6]);
-  const billingPerConsultant = pick([7000, 8000, 9000, 10000, 11000, 12000, 14000, 15000]);
+function teamCase(rng) {
+  const headcount = rng.pick([3, 4, 5, 6]);
+  const billingPerConsultant = rng.pick([7000, 8000, 9000, 10000, 11000, 12000, 14000, 15000]);
   const revenue = headcount * billingPerConsultant;
-  const directCostRate = pick([60, 65, 70, 75]);
+  const directCostRate = rng.pick([60, 65, 70, 75]);
   const directCosts = revenue * directCostRate / 100;
   return { headcount, billingPerConsultant, revenue, directCosts, gross: revenue - directCosts };
 }
@@ -78,13 +60,13 @@ export function makePortfolioCase(revenue, marginRate, overhead) {
   };
 }
 
-function portfolioCase() {
-  const revenue = pickInt(90000, 300000, 100);
-  const marginRate = pickInt(28, 46);
+function portfolioCase(rng) {
+  const revenue = rng.pickInt(90000, 300000, 100);
+  const marginRate = rng.pickInt(28, 46);
   const gross = revenue * marginRate / 100;
   const minimumOverhead = Math.ceil(revenue * 0.08 / 10) * 10;
   const maximumOverhead = Math.floor(Math.min(revenue * 0.24, gross - 1000) / 10) * 10;
-  return makePortfolioCase(revenue, marginRate, pickInt(minimumOverhead, maximumOverhead, 10));
+  return makePortfolioCase(revenue, marginRate, rng.pickInt(minimumOverhead, maximumOverhead, 10));
 }
 
 function foundations(daily, team) {
@@ -109,9 +91,9 @@ function foundations(daily, team) {
   ];
 }
 
-function marginDropQuestion() {
-  const previousMargin = pick([36, 38, 40, 42, 44, 46]);
-  const currentMargin = previousMargin - pick([4, 6, 8, 10]);
+function marginDropQuestion(rng) {
+  const previousMargin = rng.pick([36, 38, 40, 42, 44, 46]);
+  const currentMargin = previousMargin - rng.pick([4, 6, 8, 10]);
   return item('Your Gross Margin % has dropped from ' + percent(previousMargin) + ' to ' + percent(currentMargin) + ' over the last quarter while revenue remained stable. Which is the most likely cause?',
     'Direct costs increased (e.g., salary raises or higher-cost profiles placed at the same billing rate)', 'Overhead costs increased', 'You hired additional support staff', 'Taxes on the entity increased');
 }
@@ -130,11 +112,11 @@ function portfolioQuestion(portfolio) {
   };
 }
 
-function benchPortfolioQuestion(portfolio) {
+function benchPortfolioQuestion(portfolio, rng) {
   const cases = [
     [8000, 5000], [9000, 6500], [10000, 7000], [12000, 8000], [14000, 9000], [16000, 10000]
   ];
-  const [billing, continuingPayroll] = pick(cases);
+  const [billing, continuingPayroll] = rng.pick(cases);
   if (portfolio.revenue <= billing || portfolio.directCosts <= continuingPayroll)
     throw new Error('The shared P&L cannot support its bench-consultant case.');
   return {
@@ -147,10 +129,10 @@ function benchPortfolioQuestion(portfolio) {
   };
 }
 
-function consultantComparison() {
-  const billings = [pick(consultantBillings), pick(consultantBillings)];
-  const rateA = pick(consultantMarginRates);
-  const rateB = pick(consultantMarginRates.filter(rate => rate !== rateA));
+function consultantComparison(rng) {
+  const billings = [rng.pick(consultantBillings), rng.pick(consultantBillings)];
+  const rateA = rng.pick(consultantMarginRates);
+  const rateB = rng.pick(consultantMarginRates.filter(rate => rate !== rateA));
   const rates = [rateA, rateB];
   const costs = billings.map((billing, index) => billing * (100 - rates[index]) / 100);
   const names = ['Consultant A', 'Consultant B'];
@@ -166,11 +148,11 @@ function consultantComparison() {
   };
 }
 
-function rateReduction() {
-  const billing = pick([8000, 9000, 10000, 12000, 14000, 16000, 18000]);
-  const costRate = pick([60, 65, 70]);
+function rateReduction(rng) {
+  const billing = rng.pick([8000, 9000, 10000, 12000, 14000, 16000, 18000]);
+  const costRate = rng.pick([60, 65, 70]);
   const cost = billing * costRate / 100;
-  const reduction = pick([5, 10, 15]);
+  const reduction = rng.pick([5, 10, 15]);
   const reductionValue = billing * reduction / 100;
   const before = billing - cost;
   const after = before - reductionValue;
@@ -186,9 +168,9 @@ function directAction() {
     'Placing a bench consultant quickly at a billing rate above their cost', 'Reducing the number of internal meetings', 'Requesting a lower office space allocation', 'Hiring a new support profile in your team');
 }
 
-function portfolioComparison() {
-  const rates = shuffle(bmMarginRates).slice(0, 2);
-  const revenues = [pick(bmRevenues), pick(bmRevenues)];
+function portfolioComparison(rng) {
+  const rates = rng.shuffle(bmMarginRates).slice(0, 2);
+  const revenues = [rng.pick(bmRevenues), rng.pick(bmRevenues)];
   const gross = revenues.map((revenue, index) => revenue * rates[index] / 100);
   const names = ['BM Alpha', 'BM Beta'];
   const winner = rates[0] > rates[1] ? 0 : 1;
@@ -203,32 +185,33 @@ function portfolioComparison() {
   };
 }
 
-function applied(portfolio) {
+function applied(portfolio, rng) {
   return [
     portfolioQuestion(portfolio),
-    benchPortfolioQuestion(portfolio),
-    marginDropQuestion(),
-    consultantComparison(),
-    rateReduction(),
+    benchPortfolioQuestion(portfolio, rng),
+    marginDropQuestion(rng),
+    consultantComparison(rng),
+    rateReduction(rng),
     directAction(),
-    portfolioComparison()
+    portfolioComparison(rng)
   ];
 }
 
 export function makePaper() {
-  const daily = dailyCase();
-  const team = teamCase();
-  const portfolio = portfolioCase();
+  const rng = createPaperRng();
+  const daily = dailyCase(rng);
+  const team = teamCase(rng);
+  const portfolio = portfolioCase(rng);
   const questions = [];
   const key = {};
   const sections = [
     ['Foundations', foundations(daily, team)],
-    ['Applied Reading', applied(portfolio)]
+    ['Applied Reading', applied(portfolio, rng)]
   ];
   for (const [section, entries] of sections) {
-    for (const entry of shuffle(entries)) {
+    for (const entry of rng.shuffle(entries)) {
       const id = crypto.randomUUID();
-      const options = shuffle([entry.correct, ...entry.alternatives].map(text => ({ id: crypto.randomUUID(), text })));
+      const options = rng.shuffle([entry.correct, ...entry.alternatives].map(text => ({ id: crypto.randomUUID(), text })));
       key[id] = [options.find(option => option.text === entry.correct).id];
       const question = { id, section, prompt: entry.prompt, options };
       if (entry.table) question.table = entry.table;

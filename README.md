@@ -51,6 +51,8 @@ npm run build
 npm run dev
 ```
 
+`npm test` includes `tests/stress.test.js` (both packs, bounds, the 120/60 rate limit, and concurrent starts). `npm run profile:hot-path` reprints the local timing numbers behind [the hot-path note](docs/HOT-PATH.md). Those numbers are not a Workers CPU profile.
+
 ### Practice secret
 
 `PRACTICE_KEY` must be 64 hexadecimal characters representing 32 random bytes. For Cloudflare, provision it as a Worker secret named `PRACTICE_KEY` with `npx wrangler secret put PRACTICE_KEY`, retrieving the value from the approved secret store entry `MANTU_FINANCIAL_PRACTICE_KEY`. Keep the value out of source, configuration vars, chat and command history. Do not rotate the secret casually: existing practice challenges stop working when it changes.

@@ -1,3 +1,5 @@
+import { createPaperRng } from './random.js';
+
 const TOKEN_VERSION = 'p1';
 const TICKET_LIFETIME = 30 * 60 * 1000;
 const MAX_BODY_BYTES = 32 * 1024;
@@ -22,25 +24,6 @@ class PracticeError extends Error {
 const fail = (status, message) => { throw new PracticeError(status, message); };
 const json = (value, status = 200) => Response.json(value, { status, headers });
 const uuid = () => crypto.randomUUID();
-
-function randomBelow(limit) {
-  const space = 0x100000000;
-  const bound = space - (space % limit);
-  const word = new Uint32Array(1);
-  do { crypto.getRandomValues(word); } while (word[0] >= bound);
-  return word[0] % limit;
-}
-
-function pick(values) { return values[randomBelow(values.length)]; }
-
-function shuffle(values) {
-  const result = [...values];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = randomBelow(i + 1);
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
-}
 
 const referenceTable = {
   title: "Reference P&L — Business Manager's Monthly Portfolio",
@@ -72,10 +55,10 @@ const sourceQuestions = [
   ["You are comparing two Business Managers' portfolios at end of quarter. Which portfolio is more efficient from a Gross Margin % perspective?", ['BM Alpha (30% margin)', 'BM Beta (24% margin)', 'BM Beta, because €120,000 is a larger absolute amount', 'Both are equally efficient'], 0, false, { headers: ['', 'BM Alpha', 'BM Beta'], rows: [['Revenue', '€300,000', '€500,000'], ['Gross Margin', '€90,000', '€120,000']] }],
 ];
 
-function makeQuestion(source, index) {
+function makeQuestion(source, index, rng) {
   const [prompt, texts, correctIndex, usesReferenceTable = false, table] = source;
   const id = `practice-q${index + 1}`;
-  const options = shuffle(texts.map(text => ({ id: uuid(), text })));
+  const options = rng.shuffle(texts.map(text => ({ id: uuid(), text })));
   if (new Set(options.map(option => option.text)).size !== 4) throw new Error('Practice options must be distinct.');
   const question = {
     id,
@@ -89,8 +72,9 @@ function makeQuestion(source, index) {
 }
 
 export function makePracticePaper() {
-  const foundations = shuffle(sourceQuestions.slice(0, 8).map((source, index) => makeQuestion(source, index)));
-  const applied = shuffle(sourceQuestions.slice(8).map((source, index) => makeQuestion(source, index + 8)));
+  const rng = createPaperRng();
+  const foundations = rng.shuffle(sourceQuestions.slice(0, 8).map((source, index) => makeQuestion(source, index, rng)));
+  const applied = rng.shuffle(sourceQuestions.slice(8).map((source, index) => makeQuestion(source, index + 8, rng)));
   const entries = [...foundations, ...applied];
   const questions = entries.map(({ question }) => question);
   const key = Object.fromEntries(entries.map(({ question, correct }) => [question.id, correct]));
