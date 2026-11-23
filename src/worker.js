@@ -127,6 +127,14 @@ function requestCookie(request) {
   return null;
 }
 
+// The tab names the invitation it intends to read or change. The host cookie must name the same one.
+function tabReference(request) {
+  const expected = request.headers.get("X-Assessment-Reference");
+  demand(typeof expected === "string" && /^[0-9a-f]{32}$/.test(expected), 400,
+    "Reopen your personal invitation to access this assessment.");
+  return expected;
+}
+
 function cookieHeader(value, until) {
   const seconds = Math.max(0, Math.floor((until - Date.now()) / 1000));
   return COOKIE + "=" + value + "; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=" + seconds;
@@ -232,11 +240,8 @@ async function candidateRoute(request, env, url, settings) {
   const path = url.pathname;
   if (path === "/api/config" && request.method === "GET") return json(settings);
   if (path === "/api/session" && request.method === "GET") {
-    const expected = request.headers.get("X-Assessment-Reference");
     if (!settings.enabled || !session) return json({ attempt: null, serverNow: Date.now() });
-    demand(typeof expected === "string" && /^[0-9a-f]{32}$/.test(expected), 400,
-      "Reopen your personal invitation to access this assessment.");
-    demand(expected === session[1], 409,
+    demand(tabReference(request) === session[1], 409,
       "The active invitation changed. Reopen your personal invitation to continue.");
   }
   requireLive(settings);
@@ -281,11 +286,16 @@ async function candidateRoute(request, env, url, settings) {
   demand(action, 404, "Route not found.");
   demand(session, 401, "Your session is unavailable. Please reopen your invitation.");
   const [name, fields] = action;
-  await throttle(request, env, name === "integrity" ? "copy-shortcut" : "session", session[1]);
+  const expected = tabReference(request);
+  demand(expected === session[1], 409,
+    "The active invitation changed. Reopen your personal invitation to continue.");
+  await throttle(request, env, name === "integrity" ? "copy-shortcut" : "session", expected);
   const data = fields.length ? await body(request, fields) : {};
   if (name !== "view")
-    demand(data.reference === session[1], 409, "The active invitation changed. Reopen your invitation to continue.");
-  const response = await callAttempt(env, session[1], name, { ...data, sessionHash: await digest(session[2]) });
+    demand(data.reference === expected, 409, "The active invitation changed. Reopen your invitation to continue.");
+  const response = await callAttempt(env, expected, name, {
+    ...data, reference: expected, sessionHash: await digest(session[2]),
+  });
   if (!response.ok || name !== "submit") return response;
   const result = await response.json();
   return json(result, 200, { "Set-Cookie": cookieHeader(session[0], result.attempt.purgeAt) });
@@ -538,6 +548,8 @@ export class Assessment {
     const hasSession = equalDigest(record.sessionHash, data.sessionHash);
     if (!hasSession && action === "view") return json({ attempt: null, serverNow: now });
     demand(hasSession, 401, "Your session is unavailable. Please contact your recruiter.");
+    demand(data.reference === record.reference, 409,
+      "The active invitation changed. Reopen your invitation to continue.");
     if (action === "view") return json(view(record, now));
     if (action === "submit" && record.status === "submitted") return json(view(record, now));
     demand(record.status === "active", 409, "This assessment has closed.");

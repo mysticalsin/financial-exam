@@ -70,9 +70,11 @@ function fixture() {
       },
     },
   };
-  async function req(path, method = "GET", data, { cookie, admin, reference, headers = {} } = {}) {
+  async function req(path, method = "GET", data, { cookie, admin, reference, headers = {}, bindHeader = true } = {}) {
     const init = { method, headers: { ...headers } };
     if (reference) init.headers["X-Assessment-Reference"] = reference;
+    else if (bindHeader && typeof data?.reference === "string" && /^[0-9a-f]{32}$/.test(data.reference))
+      init.headers["X-Assessment-Reference"] = data.reference;
     if (!admin && method !== "GET" && !("Origin" in init.headers)) init.headers.Origin = origin;
     if (admin) init.headers.Authorization = "Bearer " + env.OPS_TOKEN;
     if (cookie) init.headers.Cookie = cookie;
@@ -180,14 +182,26 @@ test("only the owner can save, with revision checks, bounded choices, clearing a
   const b = await f.start(await f.issue());
   const question = a.attempt.questions[0];
   const mutation = { questionId: question.id, choices: [question.options[0].id], revision: a.attempt.revision };
-  const save = (data, cookie = a.cookie) => f.req("/api/answers", "PUT", data, { cookie });
+  const save = (data, cookie = a.cookie, options = {}) => f.req("/api/answers", "PUT", data, { cookie, ...options });
+  const revision = () => f.records.get(a.attempt.reference).record.revision;
+  const untouched = revision();
+  const scopedMutation = { ...mutation, reference: a.attempt.reference };
+  assert.equal((await save(scopedMutation, a.cookie, { bindHeader: false })).status, 400,
+    "a matching body reference cannot change a record without the tab header");
+  assert.equal((await save(scopedMutation, a.cookie, { reference: "f".repeat(32) })).status, 409,
+    "a mismatched tab reference cannot change the cookie owner’s record");
+  assert.equal(revision(), untouched);
   assert.equal((await save({ ...mutation, reference: a.attempt.reference }, b.cookie)).status, 409);
-  assert.equal((await save(mutation)).status, 409, "answer writes require an explicit matching reference");
+  assert.equal((await save(mutation, a.cookie, { reference: a.attempt.reference })).status, 409,
+    "answer writes require an explicit matching reference");
   assert.equal((await save({ ...mutation, reference: a.attempt.reference, choices: ["unassigned"] })).status, 422);
   assert.equal((await save({ ...mutation, reference: a.attempt.reference, choices: [mutation.choices[0], mutation.choices[0]] })).status, 422);
   assert.equal((await save({ ...mutation, reference: b.attempt.reference })).status, 409);
-  assert.equal((await f.req("/api/submit", "POST", { revision: a.attempt.revision }, { cookie: a.cookie })).status, 409);
-  const scopedMutation = { ...mutation, reference: a.attempt.reference };
+  assert.equal((await f.req("/api/submit", "POST", { reference: a.attempt.reference, revision: a.attempt.revision },
+    { cookie: a.cookie, bindHeader: false })).status, 400);
+  assert.equal((await f.req("/api/submit", "POST", { revision: a.attempt.revision },
+    { cookie: a.cookie, reference: a.attempt.reference })).status, 409);
+  assert.equal(revision(), untouched);
   const saved = await (await save(scopedMutation)).json();
   assert.equal(saved.attempt.revision, a.attempt.revision + 1);
   const repeat = await (await save(scopedMutation)).json();
@@ -375,6 +389,70 @@ test("an explicit invitation reveals an existing attempt only with both matching
     { cookie: a.cookie, reference: first.reference }).then(r => r.json())).attempt.reference, first.reference);
 });
 
+test("a completed attempt shows the next invitation notice before that attempt starts", async () => {
+  const f = fixture();
+  const first = await f.issue();
+  const second = await f.issue();
+  const a = await f.start(first);
+  f.records.get(first.reference).record.status = "submitted";
+  const inspected = await f.req("/api/invitation", "POST", { invite: second.invite }, { cookie: a.cookie });
+  assert.equal(inspected.status, 200);
+  const noticeForSecond = await inspected.json();
+  assert.equal(noticeForSecond.resume, false);
+  assert.equal(noticeForSecond.anotherActiveSession, false);
+  assert.equal(noticeForSecond.attempt, undefined);
+  assert.equal(noticeForSecond.reference, second.reference);
+  assert.equal(noticeForSecond.notice.version, notice.version);
+  assert.equal(JSON.stringify(noticeForSecond).includes('"questions"'), false);
+  assert.equal(f.records.get(second.reference).record.status, "invited");
+  const started = await f.req("/api/start", "POST", {
+    invite: second.invite, noticeVersion: notice.version, claim: random(),
+  }, { cookie: a.cookie });
+  assert.equal(started.status, 200);
+  const cookieB = started.headers.get("Set-Cookie").split(";")[0];
+  assert.equal((await started.json()).attempt.reference, second.reference);
+  assert.equal((await f.req("/api/session", "GET", undefined,
+    { cookie: cookieB, reference: first.reference })).status, 409);
+  const question = a.attempt.questions[0];
+  assert.equal((await f.req("/api/answers", "PUT", {
+    reference: first.reference, questionId: question.id, choices: [question.options[0].id], revision: a.attempt.revision,
+  }, { cookie: cookieB, reference: first.reference })).status, 409);
+  assert.equal((await (await f.req("/api/session", "GET", undefined,
+    { cookie: cookieB, reference: second.reference })).json()).attempt.reference, second.reference);
+  assert.equal(f.records.get(first.reference).record.revision, a.attempt.revision);
+});
+
+test("the attempt object checks the expected reference before returning or changing a record", async () => {
+  const f = fixture();
+  const invite = await f.issue();
+  const started = await f.start(invite);
+  const question = started.attempt.questions[0];
+  const secret = started.cookie.split(".")[1];
+  const sessionHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret)))]
+    .map(byte => byte.toString(16).padStart(2, "0")).join("");
+  const object = f.objects.get(invite.reference);
+  const call = (action, payload) => object.fetch(new Request("https://assessment.internal/" + action, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }));
+  const other = "f".repeat(32);
+  const before = structuredClone(f.records.get(invite.reference).record);
+  const deniedView = await call("view", { reference: other, sessionHash });
+  assert.equal(deniedView.status, 409);
+  assert.equal((await deniedView.json()).attempt, undefined);
+  const deniedAnswer = await call("answer", {
+    reference: other, sessionHash, questionId: question.id,
+    choices: [question.options[0].id], revision: started.attempt.revision,
+  });
+  assert.equal(deniedAnswer.status, 409);
+  assert.deepEqual(f.records.get(invite.reference).record.answers, before.answers);
+  assert.equal(f.records.get(invite.reference).record.revision, before.revision);
+  const allowed = await call("view", { reference: invite.reference, sessionHash });
+  assert.equal(allowed.status, 200);
+  assert.equal((await allowed.json()).attempt.reference, invite.reference);
+});
+
 test("an operator receives progress but no options, prompts, or grading key during an active assessment", async () => {
   const f = fixture();
   const issued = await f.issue();
@@ -436,7 +514,9 @@ test("an active user can report each assigned question once without changing ans
   const unknownCookie = cookie.split(".")[0] + "." + random();
   assert.equal((await report(signal, { cookie: unknownCookie })).status, 401);
   assert.equal((await report(signal, { cookie, headers: { Origin: "https://other.example" } })).status, 403);
+  assert.equal((await report(signal, { cookie, bindHeader: false })).status, 400);
   assert.equal((await report({ ...signal, reference: "f".repeat(32) })).status, 409);
+  assert.equal((await report(signal, { cookie, reference: "f".repeat(32) })).status, 409);
   assert.equal((await report({ ...signal, questionId: "unassigned" })).status, 422);
   for (const extra of ["text", "timestamp", "key", "choices"]) {
     assert.equal((await report({ ...signal, [extra]: "unused" })).status, 400);

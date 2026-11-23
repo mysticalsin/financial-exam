@@ -182,10 +182,10 @@ const claim = (invite, secret, version = notice.version) => api('/api/start', {
 });
 const view = (cookie, reference) => api('/api/session', { cookie, reference });
 const answer = (cookie, reference, revision, questionId, choice) => api('/api/answers', {
-  method: 'PUT', cookie, json: { reference, revision, questionId, choices: [choice] }
+  method: 'PUT', cookie, reference, json: { reference, revision, questionId, choices: [choice] }
 });
 const submit = (cookie, reference, revision, extras = {}) => api('/api/submit', {
-  method: 'POST', cookie, json: { reference, revision, ...extras }
+  method: 'POST', cookie, reference, json: { reference, revision, ...extras }
 });
 const review = (reference, options) => api('/api/ops/attempts/' + reference, { operator: true, ...options });
 

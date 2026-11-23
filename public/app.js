@@ -888,7 +888,7 @@ async function save() {
       questionId: pending.questionId,
       choices: pending.choices,
       revision: attempt.revision,
-    });
+    }, expectedReference);
     if (epoch !== candidateEpoch || view !== "question" || draft !== pending) return;
     receive(data, expectedReference);
     draft = null;
@@ -1013,7 +1013,7 @@ async function submit(cancel, ok) {
     const data = await api("submit", "POST", {
       revision: attempt.revision,
       reference: expectedReference,
-    });
+    }, expectedReference);
     if (epoch !== candidateEpoch) return;
     receive(data, expectedReference);
     await rememberHistory();

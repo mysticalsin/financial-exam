@@ -111,7 +111,7 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === '/api/answers' && request.method === 'PUT') {
       const data = await body();
-      if (!cookie || cookie !== data.reference) return json(409,{error:'Invitation changed'});
+      if (!cookie || cookie !== data.reference || ref !== data.reference) return json(409,{error:'Invitation changed'});
       if (delayAnswer) await new Promise(resolve => setTimeout(resolve, 6500));
       const current = invitations[cookie];
       if (!current?.attempt || current.attempt.status !== 'active') return json(409,{error:'Assessment closed'});
@@ -122,7 +122,7 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === '/api/submit' && request.method === 'POST') {
       const data = await body();
-      if (!cookie || cookie !== data.reference) return json(409,{error:'Invitation changed'});
+      if (!cookie || cookie !== data.reference || ref !== data.reference) return json(409,{error:'Invitation changed'});
       const current = invitations[cookie];
       if (!current?.attempt || !current.attempt.answered) return json(409,{error:'Answer required'});
       current.attempt.status = 'submitted';
@@ -172,6 +172,9 @@ try {
   const a = await context.newPage();
   await a.goto(link('A'));
   a.on('pageerror', error => console.error('Candidate page error:', error.message));
+  assert.equal(await a.evaluate(() => location.hash), '', 'the invitation fragment is removed after capture');
+  assert.equal((await a.evaluate(() => location.href)).includes(invitations[refs.A].invite), false,
+    'the invitation secret does not remain in the address');
   const invitedWelcome=await a.locator('#practice-intro').innerText();
   assert.match(invitedWelcome,/Recruitment invitation/i);
   assert.match(invitedWelcome,/country privacy notice applies/);
@@ -244,6 +247,8 @@ try {
   await a.getByLabel('€275').check();
   try { await a.getByText('Answer saved.').waitFor(); }
   catch (error) { console.error('Candidate A save state:', await a.locator('body').innerText(), calls.slice(-5)); throw error; }
+  assert.ok(calls.some(call => call.path === '/api/answers' && call.reference === refs.A && call.cookie === refs.A),
+    'a saved answer names the tab invitation and matches the host cookie');
   await a.locator('#next').click();
   await a.getByText('Candidate A private prompt 842').waitFor();
   await selectText(a,'#question-title');
@@ -264,6 +269,8 @@ try {
   await a.getByRole('button',{name:'Confirm submission'}).click();
   await a.getByText('Assessment submitted').waitFor();
   assert.equal((await a.locator('body').innerText()).includes(refs.A), true);
+  assert.ok(calls.some(call => call.path === '/api/submit' && call.reference === refs.A && call.cookie === refs.A),
+    'submission names the tab invitation and matches the host cookie');
 
   await b.goto(link('B'));
   try { await b.getByRole('button',{name:/Review your invitation/}).waitFor({timeout:5000}); }
