@@ -25,42 +25,46 @@
 
 <table>
   <tr>
-    <td width="72%" valign="top">
-      <img src="docs/screenshots/desktop.png" alt="Desktop homepage" />
+    <td colspan="2">
+      <img src="docs/screenshots/desktop.png" alt="Desktop homepage" width="100%" />
       <br />Desktop homepage
     </td>
-    <td width="28%" valign="top">
-      <img src="docs/screenshots/mobile.png" alt="Phone homepage" />
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="docs/screenshots/mobile.png" alt="Phone homepage" width="280" />
       <br />Phone homepage
     </td>
   </tr>
   <tr>
-    <td valign="top">
-      <img src="docs/screenshots/result.png" alt="Practice result" />
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/result.png" alt="Practice result" width="100%" />
       <br />Practice result
     </td>
-    <td valign="top">
-      <img src="docs/screenshots/warm-up.png" alt="Gross-margin warm-up" />
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/warm-up.png" alt="Gross-margin warm-up" width="100%" />
       <br />Gross-margin warm-up
     </td>
   </tr>
   <tr>
-    <td valign="top">
-      <img src="docs/screenshots/studio-case-1.png" alt="Applied case with an integrity notice" />
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/studio-case-1.png" alt="Applied case with an integrity notice" width="100%" />
       <br />Applied case, integrity notice
     </td>
-    <td valign="top">
-      <img src="docs/screenshots/studio-case-2.png" alt="The same applied case with a second set of figures" />
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/studio-case-2.png" alt="The same applied case with a second set of figures" width="100%" />
       <br />Same case, second set of figures
     </td>
   </tr>
   <tr>
-    <td valign="top">
-      <img src="docs/screenshots/studio-reviewer.png" alt="Reviewer record" />
+    <td colspan="2">
+      <img src="docs/screenshots/studio-reviewer.png" alt="Reviewer record" width="100%" />
       <br />Reviewer record
     </td>
-    <td valign="top">
-      <img src="docs/screenshots/social-card.png" alt="Social card cropped from the desktop homepage" />
+  </tr>
+  <tr>
+    <td colspan="2">
+      <img src="docs/screenshots/social-card.png" alt="Social card cropped from the desktop homepage" width="100%" />
       <br />Social card, 1280×640
     </td>
   </tr>
