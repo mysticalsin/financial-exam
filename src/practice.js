@@ -1,5 +1,5 @@
 const TOKEN_VERSION = 'p1';
-const TICKET_LIFETIME = 30 * 60 * 1000;
+const TICKET_LIFETIME = 15 * 60 * 1000;
 const MAX_BODY_BYTES = 32 * 1024;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -72,6 +72,39 @@ const sourceQuestions = [
   ["You are comparing two Business Managers' portfolios at end of quarter. Which portfolio is more efficient from a Gross Margin % perspective?", ['BM Alpha (30% margin)', 'BM Beta (24% margin)', 'BM Beta, because €120,000 is a larger absolute amount', 'Both are equally efficient'], 0, false, { headers: ['', 'BM Alpha', 'BM Beta'], rows: [['Revenue', '€300,000', '€500,000'], ['Gross Margin', '€90,000', '€120,000']] }],
 ];
 
+const explanationPairs = [
+  ['P&L means Profit & Loss, the statement that sets revenue against costs.',
+    'P&L means Profit & Loss. Planning & Logistics, Profit & Liquidity, and Performance & Leverage are not this statement.'],
+  ["Revenue comes from billing consultants' services to clients at an agreed daily or monthly rate.",
+    'Headcount, contract counts, and overhead do not create revenue. Revenue comes from billing consultants to clients.'],
+  ['Gross margin is client billing minus the direct cost of the consultants (salaries + charges).',
+    'Gross margin is not total revenue, profit after overhead, or net income. It is client billing minus consultant direct cost.'],
+  ['Gross margin per day is billing minus cost: €800 − €500 = €300.',
+    'Adding the figures, or reporting either figure alone, is not gross margin. €800 − €500 = €300.'],
+  ['Gross margin % is (billing − cost) / billing: (€800 − €500) / €800 = 37.5%.',
+    '62.5%, 50%, and 25% do not measure this margin. (€800 − €500) / €800 = 37.5%.'],
+  ['The salary and social charges of billable consultants are a direct cost.',
+    'Office rent, brand marketing, and CEO compensation are not direct costs. Consultant salary and social charges are.'],
+  ['A bench consultant still costs salary and produces no revenue, so gross margin decreases.',
+    'Employment, easier billing, or availability does not protect the margin. Unbilled salary makes gross margin decrease.'],
+  ['Team gross margin is total billing minus direct cost: 4 × €10,000 − €28,000 = €12,000.',
+    '€28,000, €10,000, and €40,000 are not the margin. 4 × €10,000 − €28,000 = €12,000.'],
+  ['Portfolio gross margin % is gross margin divided by revenue: €42,000 / €120,000 = 35%.',
+    '20%, 25%, and 65% are other ratios. Gross margin % is €42,000 / €120,000 = 35%.'],
+  ['Billing stops while payroll stays in direct costs, so lost billing comes out of gross margin: €42,000 − €9,000 = €33,000.',
+    'The margin does not stay €42,000, and €39,500 or €35,500 does not describe the bench month. €42,000 − €9,000 = €33,000.'],
+  ['Stable revenue and a lower gross margin % mean direct costs rose, such as raises or costlier profiles at the same rate.',
+    'Overhead, support hiring, and taxes sit below gross margin. Stable revenue with a lower rate means direct costs rose.'],
+  ['Consultant A’s margin is (€8,000 − €5,500) / €8,000 = 31.25%, ahead of Consultant B at (€12,000 − €9,000) / €12,000 = 25%.',
+    'The larger billing is not the higher rate. Consultant A at 31.25% beats Consultant B at 25%.'],
+  ['A 10% cut removes €1,000 of billing while cost stays €6,500, so gross margin falls from €3,500 to €2,500.',
+    'The margin does not stay €3,500 or move to €3,000 or €4,500. It falls from €3,500 to €2,500.'],
+  ['Placing a bench consultant above their cost adds revenue over direct cost and lifts gross margin.',
+    'Fewer meetings, a smaller office, and a new support profile do not add billing above direct cost. Placing the bench consultant does.'],
+  ['Efficiency is the margin rate, not the larger euro amount. Alpha’s €90,000 / €300,000 = 30% beats Beta’s €120,000 / €500,000 = 24%.',
+    'Beta’s larger euro margin is a lower rate. Alpha at 30% is more efficient than Beta at 24%.'],
+];
+
 function makeQuestion(source, index) {
   const [prompt, texts, correctIndex, usesReferenceTable = false, table] = source;
   const id = `practice-q${index + 1}`;
@@ -85,7 +118,8 @@ function makeQuestion(source, index) {
   };
   if (usesReferenceTable) question.usesReferenceTable = true;
   if (table) question.table = table;
-  return { question, correct: options.find(option => option.text === texts[correctIndex]).id };
+  const [good, bad] = explanationPairs[index];
+  return { question, correct: options.find(option => option.text === texts[correctIndex]).id, explanations: { good, bad } };
 }
 
 export function makePracticePaper() {
@@ -94,8 +128,9 @@ export function makePracticePaper() {
   const entries = [...foundations, ...applied];
   const questions = entries.map(({ question }) => question);
   const key = Object.fromEntries(entries.map(({ question, correct }) => [question.id, correct]));
+  const explanations = Object.fromEntries(entries.map(({ question, explanations: pair }) => [question.id, pair]));
   const choiceIds = Object.fromEntries(questions.map(question => [question.id, question.options.map(option => option.id)]));
-  return { questions, key, choiceIds, referenceTable };
+  return { questions, key, explanations, choiceIds, referenceTable };
 }
 
 function keyBytes(secret) {
@@ -171,11 +206,18 @@ async function readBody(request, fields) {
   return data;
 }
 
+function validPair(pair) {
+  return !!pair && typeof pair.good === 'string' && typeof pair.bad === 'string' &&
+    pair.good.trim().length >= 12 && pair.bad.trim().length >= 12 && pair.good !== pair.bad &&
+    Object.keys(pair).length === 2;
+}
+
 function validateTicket(ticket, now) {
   if (!ticket || ticket.v !== 1 || !Number.isSafeInteger(ticket.issuedAt) || !Number.isSafeInteger(ticket.deadline) ||
-      ticket.deadline !== ticket.issuedAt + TICKET_LIFETIME || !ticket.key || !ticket.choiceIds ||
+      ticket.deadline !== ticket.issuedAt + TICKET_LIFETIME || !ticket.key || !ticket.choiceIds || !ticket.explanations ||
       Object.keys(ticket.key).length !== 15 || Object.keys(ticket.choiceIds).length !== 15 ||
-      Object.keys(ticket.key).some(id => !Object.hasOwn(ticket.choiceIds, id)))
+      Object.keys(ticket.explanations).length !== 15 ||
+      Object.keys(ticket.key).some(id => !Object.hasOwn(ticket.choiceIds, id) || !validPair(ticket.explanations[id])))
     fail(400, 'This practice session is invalid. Start a new practice paper.');
   if (now >= ticket.deadline) fail(410, 'This practice paper has expired. Start a new one to continue.');
 }
@@ -189,7 +231,18 @@ export function scorePractice(ticket, answers) {
         !ticket.choiceIds[questionId].includes(optionId)) fail(422, 'One or more selected answers do not belong to this practice paper.');
     if (ticket.key[questionId] === optionId) score++;
   }
-  return { score, total: 15, answered: Object.keys(answers).length };
+  const review = Object.keys(ticket.choiceIds).map(questionId => {
+    const optionId = answers[questionId];
+    const answered = typeof optionId === 'string';
+    const good = answered && ticket.key[questionId] === optionId;
+    const pair = ticket.explanations[questionId];
+    return {
+      id: questionId,
+      outcome: good ? 'good' : answered ? 'bad' : 'unanswered',
+      explanation: good ? pair.good : pair.bad,
+    };
+  });
+  return { score, total: 15, answered: Object.keys(answers).length, review };
 }
 
 export async function handlePractice(request, env, throttle) {
@@ -205,7 +258,7 @@ export async function handlePractice(request, env, throttle) {
     const now = Date.now();
     if (start) {
       const paper = makePracticePaper();
-      const payload = { v: 1, issuedAt: now, deadline: now + TICKET_LIFETIME, key: paper.key, choiceIds: paper.choiceIds };
+      const payload = { v: 1, issuedAt: now, deadline: now + TICKET_LIFETIME, key: paper.key, choiceIds: paper.choiceIds, explanations: paper.explanations };
       const challenge = await encryptTicket(payload, env.PRACTICE_KEY);
       return json({ questions: paper.questions, referenceTable: paper.referenceTable, challenge, serverNow: now, deadline: payload.deadline });
     }

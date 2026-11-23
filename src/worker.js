@@ -1,4 +1,4 @@
-import { makePaper, grade } from "./bank.js";
+import { makePaper, grade, reviewPaper } from "./bank.js";
 import { authorizeReviewer, reviewerConfigured } from "./access.js";
 import { handlePractice } from "./practice.js";
 
@@ -85,7 +85,7 @@ function profiles(env) {
 function config(env) {
   const approved = profiles(env);
   const countries = Object.keys(approved).sort();
-  const durationMinutes = Number(env.DURATION_MINUTES ?? 30);
+  const durationMinutes = Number(env.DURATION_MINUTES ?? 15);
   const inviteTtlMinutes = Number(env.INVITE_TTL_MINUTES ?? 30);
   const enabled = env.LIVE_ENABLED === "true" && countries.length > 0 &&
     reviewerConfigured(env) &&
@@ -336,15 +336,31 @@ export default {
   },
 };
 
+function issuedQuestion(question) {
+  const issued = {
+    id: question.id, section: question.section, prompt: question.prompt,
+    options: question.options.map(option => ({ id: option.id, text: option.text })),
+  };
+  if (question.table) issued.table = question.table;
+  if (question.multiple) issued.multiple = true;
+  return issued;
+}
+
 function candidateState(record) {
   const active = record.status === "active";
-  return {
+  const closed = record.status === "submitted" || record.status === "expired";
+  const state = {
     reference: record.reference, revision: record.revision, status: record.status,
     country: record.country, notice: record.notice,
     deadline: record.deadline, purgeAt: record.purgeAt, startedAt: record.startedAt, submittedAt: record.submittedAt ?? null,
-    questions: active ? record.paper.questions : [], answers: active ? record.answers : {},
+    questions: active ? record.paper.questions.map(issuedQuestion) : [], answers: active ? record.answers : {},
     total: record.paper.questions.length, answered: Object.keys(record.answers).length,
   };
+  if (closed && record.paper) {
+    state.score = Number.isInteger(record.score) ? record.score : grade(record.paper, record.answers);
+    state.review = reviewPaper(record.paper, record.answers);
+  }
+  return state;
 }
 
 function view(record, now) {
@@ -498,6 +514,7 @@ export class Assessment {
     if (record.status === "active" && record.deadline <= now) {
       const hadCompactionAlarm = compactAt(record) !== undefined;
       record.status = "expired";
+      record.score = grade(record.paper, record.answers);
       compactIntegrity(record);
       record.revision++;
       etag = await this.persist(record, etag, hadCompactionAlarm && action !== "alarm");

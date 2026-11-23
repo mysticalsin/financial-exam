@@ -11,6 +11,7 @@ let phase = "idle";
 let score = null;
 let total = 0;
 let resultAnswered = 0;
+let resultReview = [];
 let resultUntil = 0;
 let requestVersion = 0;
 let submissionPending = false;
@@ -78,6 +79,7 @@ function clearPractice() {
   score = null;
   total = 0;
   resultAnswered = 0;
+  resultReview = [];
   resultUntil = 0;
   submissionPending = false;
   activeFilter = "all";
@@ -95,9 +97,13 @@ function validTable(table) {
     table.rows.every((row) => Array.isArray(row) && row.length === table.headers.length && row.every((x) => typeof x === "string"));
 }
 function isValidQuestion(question) {
-  return question && typeof question.id === "string" && typeof question.section === "string" &&
+  if (!question || typeof question !== "object") return false;
+  const allowed = new Set(["id", "section", "prompt", "options", "table", "usesReferenceTable"]);
+  if (Object.keys(question).some((key) => !allowed.has(key))) return false;
+  return typeof question.id === "string" && typeof question.section === "string" &&
     typeof question.prompt === "string" && Array.isArray(question.options) && question.options.length >= 2 &&
-    question.options.every((option) => typeof option.id === "string" && typeof option.text === "string") &&
+    question.options.every((option) => option && typeof option === "object" && Object.keys(option).every((key) => key === "id" || key === "text") &&
+      typeof option.id === "string" && typeof option.text === "string") &&
     new Set(question.options.map((option) => option.id)).size === question.options.length &&
     (!question.table || validTable(question.table)) &&
     (question.usesReferenceTable === undefined || typeof question.usesReferenceTable === "boolean");
@@ -134,8 +140,10 @@ async function start() {
   try {
     const data = await api("start", {});
     if (version !== requestVersion) return;
+    const startFields = new Set(["questions", "referenceTable", "challenge", "serverNow", "deadline"]);
     if (!Array.isArray(data.questions) || data.questions.length !== 15 || !data.questions.every(isValidQuestion) ||
         new Set(data.questions.map((q) => q.id)).size !== 15 || typeof data.challenge !== "string" || !data.challenge ||
+        Object.keys(data).some((key) => !startFields.has(key)) ||
         !Number.isFinite(data.serverNow) || !Number.isFinite(data.deadline) || data.deadline <= data.serverNow ||
         (data.referenceTable && !validTable(data.referenceTable))) {
       throw new Error("The practice assessment could not be opened. Try again.");
@@ -170,7 +178,7 @@ function showPreflight() {
   [["01–08", "Foundations", "Core financial concepts"], ["09–15", "Applied reading", "Portfolio P&L decisions"]].forEach(([range, label, detail]) => {
     const part = el("div", "preflight-part"); part.append(el("span", "preflight-range", range), el("strong", "", label), el("small", "", detail)); overview.append(part);
   });
-  const note = el("p", "preflight-lead", "Take 30 minutes. Calculator use is fine, and every answer stays editable until you submit. A refresh clears the paper; your score is shown only here, and no practice record is saved.");
+  const note = el("p", "preflight-lead", "Take 15 minutes. Calculator use is fine, and every answer stays editable until you submit. A refresh clears the paper; your score and explanations are shown only after you submit, and no practice record is saved.");
   paperPanel.append(overview, note);
   const examplePanel = el("section", "preflight-panel", ""); examplePanel.id = "preflight-example-panel"; examplePanel.setAttribute("aria-labelledby", exampleTab.id); examplePanel.hidden = true;
   examplePanel.append(el("p", "example-label", "A QUICK WARM-UP"), el("p", "example-prompt", "€100 revenue − €60 cost. What is the gross margin in euros?"));
@@ -193,7 +201,7 @@ function showPreflight() {
   }
   const actions = el("div", "action-row");
   actions.append(button("Not now", "button secondary", () => dialog.close()));
-  const begin = button("Start 30-minute practice", "button primary", () => { dialog.close(); start(); });
+  const begin = button("Start 15-minute practice", "button primary", () => { dialog.close(); start(); });
   begin.id = "practice-begin";
   actions.append(begin);
   $("dialog-body").replaceChildren(title, tabs, paperPanel, examplePanel, actions);
@@ -497,11 +505,23 @@ async function submitPractice() {
   try {
     const result = await api("submit", { challenge, answers: { ...answers } });
     if (version !== requestVersion) return;
-    if (!Number.isSafeInteger(result.score) || !Number.isSafeInteger(result.total) || result.total !== questions.length ||
-        !Number.isSafeInteger(result.answered) || !Number.isFinite(result.submittedAt) || result.score < 0 || result.score > result.total || result.answered !== questions.length) {
+    const optionIds = questions.flatMap((question) => question.options.map((option) => option.id));
+    const prompts = new Map(questions.map((question) => [question.id, question.prompt]));
+    const seen = new Set();
+    const leaked = "key" in result || "correct" in result || "explanations" in result || "expected" in result;
+    const review = Array.isArray(result.review) ? result.review.map((item) => {
+      if (!item || typeof item.id !== "string" || !prompts.has(item.id) || seen.has(item.id)) return null;
+      seen.add(item.id);
+      if (!["good", "bad", "unanswered"].includes(item.outcome) || typeof item.explanation !== "string" || item.explanation.length < 12) return null;
+      if ("correct" in item || "key" in item || "expected" in item || optionIds.some((id) => item.explanation.includes(id))) return null;
+      return { id: item.id, prompt: prompts.get(item.id), outcome: item.outcome, explanation: item.explanation };
+    }) : null;
+    if (leaked || !Number.isSafeInteger(result.score) || !Number.isSafeInteger(result.total) || result.total !== questions.length ||
+        !Number.isSafeInteger(result.answered) || !Number.isFinite(result.submittedAt) || result.score < 0 || result.score > result.total || result.answered !== questions.length ||
+        !review || review.length !== questions.length || seen.size !== questions.length) {
       throw new Error("The practice score could not be confirmed. Try again.");
     }
-    score = result.score; total = result.total; resultAnswered = result.answered;
+    score = result.score; total = result.total; resultAnswered = result.answered; resultReview = review;
     clockBase = { server: result.submittedAt, local: performance.now() };
     resultUntil = result.submittedAt + 30 * 60 * 1000;
     questions = []; referenceTable = null; answers = Object.create(null); challenge = ""; deadline = 0;
@@ -549,9 +569,17 @@ function renderResult() {
   });
   detailPanel.append(bands);
   layout.append(scorePanel, detailPanel);
+  const reviewList = el("ol", "exam-review");
+  resultReview.forEach((item, index) => {
+    const tone = item.outcome === "good" ? "good" : item.outcome === "unanswered" ? "unanswered" : "bad";
+    const label = tone === "good" ? "Correct" : tone === "unanswered" ? "Unanswered" : "Incorrect";
+    const row = el("li", "exam-review-item is-" + tone);
+    row.append(el("p", "review-outcome", "Question " + (index + 1) + " · " + label), el("p", "review-prompt", item.prompt), el("p", "review-explanation", item.explanation));
+    reviewList.append(row);
+  });
   const actions = el("div", "result-actions");
   actions.append(button("Retake practice assessment", "button primary", start), button("Back to overview", "button secondary", () => { clearPractice(); phase = "idle"; showHome(); }));
-  card.append(top, layout, el("p", "result-copy", "This practice score is shown only here. It is not a hiring assessment and is not shared with recruiters."), actions);
+  card.append(top, layout, el("p", "result-copy", "This practice score and these explanations are shown only after you submit. They are not a hiring assessment and are not shared with recruiters."), reviewList, actions);
   panel.replaceChildren(card);
   window.scrollTo({ top: 0, behavior: "instant" });
   heading.focus({ preventScroll: true });

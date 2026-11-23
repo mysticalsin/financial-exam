@@ -4,6 +4,10 @@ import {readFile} from 'node:fs/promises';
 import worker from '../src/worker.js';
 import {makePracticePaper, scorePractice} from '../src/practice.js';
 
+function serverTicket(paper) {
+  return {key:paper.key, choiceIds:paper.choiceIds, explanations:paper.explanations};
+}
+
 const origin = 'https://assessment.example';
 const key = 'a'.repeat(64);
 const hexId = /^[a-f\d-]{36}$/i;
@@ -118,12 +122,25 @@ test('practice paper matches the supplied 15-question paper, shuffles within its
   });
   assert.notDeepEqual(first.questions.map(q => q.id), second.questions.map(q => q.id), 'question order is freshly shuffled');
   for (const paper of [first, second]) {
-    assert.equal(scorePractice({key:paper.key,choiceIds:paper.choiceIds}, paper.key).score, 15);
-    assert.deepEqual(scorePractice({key:paper.key,choiceIds:paper.choiceIds}, {}), {score:0,total:15,answered:0});
+    for (const question of paper.questions) {
+      assert.equal(question.explanations, undefined);
+      assert.equal(question.correct, undefined);
+      assert.notEqual(paper.explanations[question.id].good, paper.explanations[question.id].bad);
+    }
+    const perfect = scorePractice(serverTicket(paper), paper.key);
+    assert.equal(perfect.score, 15);
+    assert.ok(perfect.review.every(item => item.outcome === 'good' && item.explanation === paper.explanations[item.id].good));
+    const blank = scorePractice(serverTicket(paper), {});
+    assert.equal(blank.score, 0);
+    assert.equal(blank.total, 15);
+    assert.equal(blank.answered, 0);
+    assert.ok(blank.review.every(item => item.outcome === 'unanswered' && item.explanation === paper.explanations[item.id].bad));
     const oneWrong = {...paper.key};
     const question = paper.questions[0];
     oneWrong[question.id] = question.options.find(option => option.id !== paper.key[question.id]).id;
-    assert.equal(scorePractice({key:paper.key,choiceIds:paper.choiceIds}, oneWrong).score, 14);
+    const missed = scorePractice(serverTicket(paper), oneWrong);
+    assert.equal(missed.score, 14);
+    assert.equal(missed.review.find(item => item.id === question.id).outcome, 'bad');
   }
 });
 
@@ -148,7 +165,7 @@ test('practice route is separate, stateless, same-origin, capped and uses opaque
   assert.equal(started.headers.has('Set-Cookie'), false);
   const first = await started.json();
   assert.equal(first.questions.length, 15);
-  assert.equal(first.deadline - first.serverNow, 30 * 60 * 1000);
+  assert.equal(first.deadline - first.serverNow, 15 * 60 * 1000);
   assert.match(first.challenge, /^p1\.[A-Za-z\d_-]+$/);
   assert.equal(first.challenge.includes(first.questions[0].id), false, 'ticket is encrypted, not readable JSON');
   assert.equal(Object.keys(first).sort().join(','), 'challenge,deadline,questions,referenceTable,serverNow');
@@ -170,9 +187,22 @@ test('practice route is separate, stateless, same-origin, capped and uses opaque
   const partial = await request('/api/practice/submit', {challenge:first.challenge,answers:allFirstChoices});
   assert.equal(partial.status, 200);
   const scored = await partial.json();
-  assert.deepEqual(Object.keys(scored).sort(), ['answered','score','submittedAt','total']);
+  assert.deepEqual(Object.keys(scored).sort(), ['answered','review','score','submittedAt','total']);
   assert.equal(scored.total, 15);
   assert.equal(scored.answered, 15);
+  assert.equal(scored.review.length, 15);
+  const optionIds = first.questions.flatMap(question => question.options.map(option => option.id));
+  for (const item of scored.review) {
+    assert.deepEqual(Object.keys(item).sort(), ['explanation','id','outcome']);
+    assert.ok(['good','bad'].includes(item.outcome));
+    assert.equal(optionIds.some(id => item.explanation.includes(id)), false);
+    assert.equal(JSON.stringify(first).includes(item.explanation), false, 'start payload hides the end explanation');
+  }
+  assert.equal(scored.review.filter(item => item.outcome === 'good').length, scored.score);
+  assert.equal(JSON.stringify(scored).includes('"key":'), false);
+  assert.equal(JSON.stringify(scored).includes('"correct":'), false);
+  assert.equal((await request('/api/practice/start', {deadline:Date.now()+60*60000})).status, 400, 'client cannot choose the deadline');
+  assert.equal((await request('/api/practice/submit', {challenge:first.challenge,answers:allFirstChoices,deadline:Date.now()+60*60000})).status, 400, 'client cannot extend the deadline');
   const retry = await (await request('/api/practice/submit', {challenge:first.challenge,answers:allFirstChoices})).json();
   assert.deepEqual({score:retry.score,total:retry.total,answered:retry.answered},
     {score:scored.score,total:scored.total,answered:scored.answered});
@@ -183,6 +213,9 @@ test('practice route is separate, stateless, same-origin, capped and uses opaque
     Date.now = () => expired.deadline;
     const response = await request('/api/practice/submit', {challenge:expired.challenge,answers:{}});
     assert.equal(response.status, 410);
+    const expiredBody = await response.json();
+    assert.equal(expiredBody.score, undefined);
+    assert.equal(expiredBody.review, undefined);
   } finally { Date.now = originalNow; }
 
   assert.equal((await request('/api/practice/start', {}, {origin:'https://other.example'})).status, 403);
@@ -211,4 +244,29 @@ test('practice module has no hiring-bank dependency or persistent-data operation
   const source = await readFile(new URL('../src/practice.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /from\s+["'][^"']*bank\.js/);
   assert.doesNotMatch(source, /RECORDS|ATTEMPTS|localStorage|sessionStorage|Set-Cookie/i);
+  assert.match(source, /TICKET_LIFETIME = 15 \* 60 \* 1000/);
+});
+
+test('public exam copy is 15 minutes and bundles omit practice explanations', async () => {
+  const paper = makePracticePaper();
+  const files = ['public/index.html', 'public/app.js', 'public/practice.js', 'public/review/review.js'];
+  const sources = await Promise.all(files.map(file => readFile(new URL('../' + file, import.meta.url), 'utf8')));
+  const bundle = sources.join('\n');
+  for (const pair of Object.values(paper.explanations)) {
+    assert.equal(bundle.includes(pair.good), false, pair.good);
+    assert.equal(bundle.includes(pair.bad), false, pair.bad);
+  }
+  assert.match(sources[0], /15 questions[\s\S]*15 minutes/);
+  assert.doesNotMatch(sources[0], /30 minutes/);
+  assert.match(sources[1], /Allow 15 minutes/);
+  assert.match(sources[1], /15 questions · 15 minutes/);
+  assert.match(sources[1], /30 minutes after submission/);
+  assert.match(sources[2], /Start 15-minute practice/);
+  assert.match(sources[2], /Take 15 minutes/);
+  assert.doesNotMatch(sources[2], /30-minute/);
+  assert.match(sources[3], /durationMinutes \|\| 15/);
+  const wrangler = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
+  assert.match(wrangler, /"DURATION_MINUTES": "15"/);
+  assert.match(wrangler, /"LIVE_ENABLED": "false"/);
+  assert.match(wrangler, /"INVITE_TTL_MINUTES": "30"/);
 });

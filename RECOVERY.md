@@ -14,7 +14,7 @@ Recovered 2026-11-23 (America/Sao_Paulo).
 
 Live bindings at recovery (do **not** commit secrets):
 - ASSETS, ATTEMPTS (DO), RECORDS (R2 EU), RATE_LIMITER
-- `DURATION_MINUTES=30` (Tony: change to **15**)
+- `DURATION_MINUTES=15`
 - `INVITE_TTL_MINUTES=30`, `LIVE_ENABLED=false`, `PRACTICE_KEY` (secret)
 
 Screenshots / studio mp4 under docs/screenshots were omitted (large binaries).
@@ -31,7 +31,7 @@ Screenshots / studio mp4 under docs/screenshots were omitted (large binaries).
 | `robots.txt` | Recovered from live |
 | Durable Object class source | **Partial** — DO logic lives inside modular `src/worker.js` (Assessment namespace via `env.ATTEMPTS`); no separate DO file |
 | Question bank size | **Generative** templates in `src/bank.js` (~dozen item factories + random params), **not** a static 100–200 curated bank yet |
-| 15-minute timer | Config still defaults to 30; needs env/`DURATION_MINUTES=15` |
+| 15-minute timer | `DURATION_MINUTES` and the practice challenge are 15 minutes |
 | End-only scoring + explanations + luxurious UI + Rust hot paths + stress/perfection bar | **Project backlog** (not implemented in this recovery commit) |
 
 ## Tony requirements (Project backlog — do not treat as done)

@@ -217,7 +217,7 @@ async function exercise() {
   assert.ok(JSON.stringify(retry.body.attempt) === JSON.stringify(initial), 'retry preserves the same paper and deadline');
   assert.equal(initial.questions.length, 15);
   assert.equal(initial.deadline - initial.startedAt, 17 * 60000);
-  const privateFields = new Set(['key', 'correct', 'score', 'expected', 'inviteHash', 'sessionHash', 'paper']);
+  const privateFields = new Set(['key', 'correct', 'score', 'expected', 'inviteHash', 'sessionHash', 'paper', 'review', 'explanation', 'explanations']);
   JSON.stringify(initial, (name, value) => {
     assert.ok(!privateFields.has(name), 'candidate payload omits private field ' + name);
     return value;
@@ -288,7 +288,12 @@ async function exercise() {
   assert.equal(receipt.purgeAt, Math.min(preflight.hardEnd, receipt.submittedAt + 30 * 60000));
   assert.equal(receipt.answered, 15);
   assert.equal(receipt.questions.length, 0);
-  assert.ok(!Object.hasOwn(receipt, 'score') && !Object.hasOwn(receipt, 'key'));
+  assert.equal(typeof receipt.score, 'number');
+  assert.equal(receipt.review.length, 15);
+  assert.ok(!Object.hasOwn(receipt, 'key'));
+  assert.equal(JSON.stringify(receipt).includes('"key":'), false);
+  assert.equal(JSON.stringify(receipt).includes('"correct":'), false);
+  assert.equal(JSON.stringify(receipt).includes('"expected":'), false);
   assert.deepEqual(status(await submit(cookieA, a.reference, revision), 200, 'idempotent final submit').attempt, receipt);
   status(await answer(cookieA, a.reference, receipt.revision, firstQ.id, choices[0]), 409, 'completed paper is immutable');
   const result = status(await review(a.reference), 200, 'recruiter result');
@@ -305,6 +310,8 @@ async function exercise() {
     if (chosenText === row.expected[0]) expectedScore++;
   }
   assert.equal(result.score, expectedScore, 'grade matches an independent count from original selections and closed review');
+  assert.equal(receipt.score, expectedScore);
+  assert.equal(receipt.review.filter(item => item.outcome === 'good').length, expectedScore);
   status(await review(a.reference, { method: 'DELETE' }), 200, 'erase request');
   status(await review(a.reference), 404, 'deleted operator export');
   assert.equal(status(await view(cookieA, a.reference), 200, 'deleted candidate session').attempt, null);

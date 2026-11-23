@@ -48,7 +48,7 @@
   ],
   "vars": {
     "LIVE_ENABLED": "false",
-    "DURATION_MINUTES": "30",
+    "DURATION_MINUTES": "15",
     "INVITE_TTL_MINUTES": "30"
   },
   "r2_buckets": [

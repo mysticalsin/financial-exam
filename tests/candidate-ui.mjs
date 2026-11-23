@@ -129,6 +129,12 @@ const server = createServer(async (request, response) => {
       current.status = 'submitted';
       current.attempt.submittedAt = Date.now();
       current.attempt.purgeAt = Date.now()+60000;
+      current.attempt.score = 1;
+      current.attempt.total = 2;
+      current.attempt.review = [
+        {id:'q1', prompt:'Saved answer one', outcome:'good', explanation:'Good: billing minus direct cost is the margin.'},
+        {id:'q2', prompt:'Saved answer two', outcome:'bad', explanation:'Bad: the cost figure alone is not the margin.'},
+      ];
       return json(200, {attempt:current.attempt, serverNow:Date.now()}, {
         'Set-Cookie':`__Host-assessment=${cookie}.${current.name.toLowerCase().repeat(64)}; Path=/; Secure; HttpOnly; SameSite=Strict`,
       });
@@ -263,6 +269,8 @@ try {
   await a.getByRole('button',{name:'Submit assessment'}).click();
   await a.getByRole('button',{name:'Confirm submission'}).click();
   await a.getByText('Assessment submitted').waitFor();
+  await a.getByText('Good: billing minus direct cost is the margin.').waitFor();
+  assert.match(await a.locator('body').innerText(), /1 of 2/);
   assert.equal((await a.locator('body').innerText()).includes(refs.A), true);
 
   await b.goto(link('B'));

@@ -298,7 +298,7 @@ function privacyContent() {
     "body-copy",
     recruitmentContext
       ? "This recruitment assessment is governed by the country privacy notice below. The public practice privacy description does not apply to this invitation. The service also receives connection metadata, such as IP address and request timing, to deliver and protect the site."
-      : "The anonymous practice assessment uses synthetic financial questions. Before you submit, answers and progress stay in this tab's memory and are not written to browser storage. If you submit, the service checks your answers and returns only your score; it does not save a practice record or share the score with recruiters. The service receives connection metadata, such as IP address and request timing, to deliver and protect the site. A recruitment invitation starts a separate process with its own privacy notice and retention rules.",
+      : "The anonymous practice assessment uses synthetic financial questions. Before you submit, answers and progress stay in this tab's memory and are not written to browser storage. If you submit before the deadline, the service returns your score and a short explanation for each question. It does not reveal answers during the paper, save a practice record, or share the result with recruiters. The service receives connection metadata, such as IP address and request timing, to deliver and protect the site. A recruitment invitation starts a separate process with its own privacy notice and retention rules.",
   );
   const groupContact = el(
     "p",
@@ -371,7 +371,7 @@ function landing(focus = false) {
   const beforeCopy = $("landing").querySelector(".studio-before-copy");
   if (beforeCopy) beforeCopy.textContent = recruitmentLink
     ? `This invitation contains 15 questions. Your time allowance is confirmed below before you start. You may use a calculator and review every answer before submitting.`
-    : "Two parts move from financial foundations to portfolio decisions. Allow 30 minutes, use a calculator if helpful, and review every answer before you submit.";
+    : "Two parts move from financial foundations to portfolio decisions. Allow 15 minutes, use a calculator if helpful, and review every answer before you submit.";
   const beforePrivacy = $("landing").querySelector(".studio-before-privacy");
   if (beforePrivacy) beforePrivacy.textContent = recruitmentLink
     ? "Recruitment answers are handled under the country notice shown before start. Your invitation has its own time allowance and retention period. The service also receives technical request metadata to deliver and protect the site."
@@ -380,7 +380,7 @@ function landing(focus = false) {
   if (recruitmentLink) scope.textContent = invitation?.durationMinutes
     ? `15 questions · ${invitation.durationMinutes} minutes`
     : "Personal invitation · time allowance confirmed before start";
-  else scope.textContent = "15 questions · 30 minutes";
+  else scope.textContent = "15 questions · 15 minutes";
   const trigger = $("landing-action");
   trigger.className = "button primary start-practice";
   const canStart = Boolean(invite && config?.enabled && invitation);
@@ -1139,6 +1139,22 @@ async function expireView() {
     deadlineCheck = false;
   }
 }
+function renderExamReview(review) {
+  if (!Array.isArray(review) || !review.length) return null;
+  const list = el("ol", "exam-review");
+  review.forEach((item, index) => {
+    if (!item || typeof item.explanation !== "string" || !item.explanation) return;
+    if ("correct" in item || "key" in item || "expected" in item) return;
+    const tone = item.outcome === "good" ? "good" : item.outcome === "unanswered" ? "unanswered" : "bad";
+    const label = tone === "good" ? "Correct" : tone === "unanswered" ? "Unanswered" : "Incorrect";
+    const row = el("li", "exam-review-item is-" + tone);
+    row.append(el("p", "review-outcome", "Question " + (index + 1) + " · " + label));
+    if (typeof item.prompt === "string" && item.prompt) row.append(el("p", "review-prompt", item.prompt));
+    row.append(el("p", "review-explanation", item.explanation));
+    list.append(row);
+  });
+  return list.childElementCount ? list : null;
+}
 function terminal() {
   if (dialog.open) dialog.close();
   switchView("terminal");
@@ -1171,6 +1187,12 @@ function terminal() {
           ? dateTime(attempt.deadline)
           : null,
     ],
+    [
+      "Score",
+      Number.isInteger(attempt.score) && Number.isInteger(attempt.total)
+        ? attempt.score + " of " + attempt.total
+        : null,
+    ],
   ]);
   const referenceCell = details.querySelector("dd");
   if (referenceCell) referenceCell.classList.add("receipt-ref");
@@ -1182,11 +1204,13 @@ function terminal() {
       "p",
       "body-copy",
       done
-        ? "Your answers have been received. Keep your assessment reference if you contact your recruiter. The receipt is available for a limited time."
-        : "The recruitment team can review the answers saved before the deadline. Contact your recruiter if you need support.",
+        ? "Your answers have been received. The score and explanations below are available only after the assessment ends. Keep your assessment reference if you contact your recruiter."
+        : "Time has ended. Saved answers were scored on the server. The explanations below were not available while the timer was running.",
     ),
     details,
   );
+  const review = renderExamReview(attempt.review);
+  if (review) card.append(review);
   panel.append(card);
   setFocus(heading);
 }

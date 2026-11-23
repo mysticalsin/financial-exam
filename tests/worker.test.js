@@ -17,7 +17,7 @@ function fixture() {
   const limiterKeys = [];
   const env = {
     LIVE_ENABLED: "true", PRIVACY_COUNTRY: "FR", PRIVACY_NOTICE: { ...notice }, OPS_TOKEN: random(),
-    ACCESS_ISSUER: "https://synthetic-test.cloudflareaccess.com", ACCESS_AUD: "a".repeat(64), DURATION_MINUTES: 30,
+    ACCESS_ISSUER: "https://synthetic-test.cloudflareaccess.com", ACCESS_AUD: "a".repeat(64), DURATION_MINUTES: "15",
     RATE_LIMITER: { async limit({ key }) { limiterKeys.push(key); return { success: true }; } },
     ASSETS: { async fetch() { return new Response("Test page"); } },
     RECORDS: {
@@ -83,7 +83,7 @@ function fixture() {
     return worker.fetch(new Request(origin + path, init), env);
   }
   const admin = { admin: true };
-  async function issue(durationMinutes = 30) {
+  async function issue(durationMinutes = 15) {
     const r = await req("/api/ops/invites", "POST", { durationMinutes }, admin);
     assert.equal(r.status, 201);
     return r.json();
@@ -198,24 +198,48 @@ test("only the owner can save, with revision checks, bounded choices, clearing a
   assert.equal(cleared.attempt.answered, 0);
 });
 
-test("server computes score once and exports human-readable results, with no score in candidate receipt", async () => {
+test("server computes score once and reveals explanations only after the exam ends", async () => {
   const f = fixture();
+  delete f.env.DURATION_MINUTES;
+  assert.equal((await (await f.req("/api/config")).json()).durationMinutes, 15);
+  f.env.DURATION_MINUTES = "15";
   const invite = await f.issue();
+  assert.equal(invite.durationMinutes, 15);
+  const started = await f.req("/api/start", "POST", {
+    invite: invite.invite, claim: random(), noticeVersion: notice.version, deadline: Date.now() + 60 * 60000, durationMinutes: 55,
+  });
+  assert.equal(started.status, 400, "client cannot set the exam clock");
   const a = await f.start(invite);
+  assert.equal(a.attempt.deadline - a.attempt.startedAt, 15 * 60000);
+  assert.equal(a.attempt.score, undefined);
+  assert.equal(a.attempt.review, undefined);
+  const activeBody = JSON.stringify(a.attempt);
+  assert.equal(activeBody.includes('"key":'), false);
+  assert.equal(activeBody.includes('"correct":'), false);
+  assert.equal(activeBody.includes('"explanation":'), false);
   let revision = a.attempt.revision;
   const key = f.records.get(invite.reference).record.paper.key;
   for (const question of a.attempt.questions) {
     const reply = await f.req("/api/answers", "PUT",
+      { reference: invite.reference, questionId: question.id, choices: key[question.id], revision, deadline: Date.now() + 60 * 60000 }, { cookie: a.cookie });
+    assert.equal(reply.status, 400, "client cannot extend the deadline");
+    const saved = await f.req("/api/answers", "PUT",
       { reference: invite.reference, questionId: question.id, choices: key[question.id], revision }, { cookie: a.cookie });
-    assert.equal(reply.status, 200);
-    revision = (await reply.json()).attempt.revision;
+    assert.equal(saved.status, 200);
+    const body = await saved.json();
+    assert.equal(body.attempt.score, undefined);
+    assert.equal(body.attempt.review, undefined);
+    revision = body.attempt.revision;
   }
   const submit = () => f.req("/api/submit", "POST", { reference: invite.reference, revision }, { cookie: a.cookie });
   const final = (await (await submit()).json()).attempt;
   assert.equal(final.status, "submitted");
   assert.equal(final.answered, 15);
   assert.equal(final.purgeAt, final.submittedAt + 30 * 60000);
-  assert.equal(final.score, undefined);
+  assert.equal(final.score, 15);
+  assert.equal(final.review.length, 15);
+  assert.ok(final.review.every(item => item.outcome === "good" && item.explanation.length > 12));
+  for (const item of final.review) assert.equal(activeBody.includes(item.explanation), false);
   assert.deepEqual(final.questions, []);
   assert.deepEqual((await (await submit()).json()).attempt, final);
   const question = a.attempt.questions[0];
@@ -244,6 +268,10 @@ test("absolute deadline closes edits and retains saved work; read-time expiry an
   const closed = await (await f.req("/api/session", "GET", undefined, { cookie: a.cookie, reference: inv.reference })).json();
   assert.equal(closed.attempt.status, "expired");
   assert.deepEqual(closed.attempt.questions, []);
+  assert.equal(closed.attempt.score, 0);
+  assert.equal(closed.attempt.review.length, 15);
+  assert.ok(closed.attempt.review.every(item => item.outcome === "unanswered" && item.explanation.length > 12));
+  assert.equal(JSON.stringify(a.attempt).includes(closed.attempt.review[0].explanation), false);
   f.records.get(inv.reference).record.purgeAt = Date.now() - 1;
   const purged = await (await f.req("/api/session", "GET", undefined,
     { cookie: a.cookie, reference: inv.reference })).json();

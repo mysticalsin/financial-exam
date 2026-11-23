@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { grade, makePaper, makePortfolioCase } from '../src/bank.js';
+import { grade, makePaper, makePortfolioCase, reviewPaper } from '../src/bank.js';
 
 const money = value => Number(value.replace(/[€,\s]/g, ''));
 const amountsIn = text => [...text.matchAll(/€[\d,]+/g)].map(match => money(match[0]));
@@ -98,6 +98,26 @@ test('conceptual source questions retain their source choices and answer meaning
     assert.deepEqual(q.options.map(o => o.text).sort(), [...choices].sort());
     assert.equal(correctText(paper, q), correct);
   }
+});
+
+test('explanations stay off the issued questions and agree with the grade', () => {
+  const paper = makePaper();
+  assert.equal(Object.keys(paper.explanations).length, 15);
+  for (const question of paper.questions) {
+    const pair = paper.explanations[question.id];
+    assert.equal(typeof pair.good, 'string');
+    assert.notEqual(pair.good, pair.bad);
+    assert.equal(JSON.stringify(question).includes(pair.good), false);
+    assert.equal(JSON.stringify(question).includes(pair.bad), false);
+    assert.equal(Object.hasOwn(question, 'correct'), false);
+    assert.equal(Object.hasOwn(question, 'explanations'), false);
+  }
+  const perfect = reviewPaper(paper, paper.key);
+  assert.ok(perfect.every(item => item.outcome === 'good' && item.explanation === paper.explanations[item.id].good));
+  const wrong = Object.fromEntries(paper.questions.map(q => [q.id, [q.options.find(o => o.id !== paper.key[q.id][0]).id]]));
+  assert.ok(reviewPaper(paper, wrong).every(item => item.outcome === 'bad' && item.explanation === paper.explanations[item.id].bad));
+  assert.ok(reviewPaper(paper, {}).every(item => item.outcome === 'unanswered'));
+  assert.equal(perfect.filter(item => item.outcome === 'good').length, grade(paper, paper.key));
 });
 
 test('grading accepts only the issued option for each question and gives no partial credit', () => {
