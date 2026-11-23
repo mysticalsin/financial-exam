@@ -157,6 +157,9 @@ test("invitation is single-use, retriable with the same claim, preserves variant
   assert.equal(a.attempt.questions.length, 15);
   assert.equal(JSON.stringify(a.attempt).includes('"key":'), false);
   assert.equal(JSON.stringify(a.attempt).includes('"correct":'), false);
+  assert.equal(JSON.stringify(a.attempt).includes('"notes"'), false);
+  assert.equal(JSON.stringify(a.attempt).includes('"bankIds"'), false);
+  assert.equal(JSON.stringify(a.attempt).includes("Good answer:"), false);
   assert.equal((await f.req("/api/start", "POST", { ...params, claim: random() })).status, 403);
   assert.equal((await f.req("/api/session", "GET", undefined, { cookie: a.cookie })).status, 400,
     "a cookie alone cannot select a candidate record");

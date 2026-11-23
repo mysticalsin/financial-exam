@@ -1,4 +1,4 @@
-import { makePaper, grade } from "./bank.js";
+import { clientQuestion, grade, makePaper } from "./bank.js";
 import { authorizeReviewer, reviewerConfigured } from "./access.js";
 import { handlePractice } from "./practice.js";
 
@@ -342,7 +342,7 @@ function candidateState(record) {
     reference: record.reference, revision: record.revision, status: record.status,
     country: record.country, notice: record.notice,
     deadline: record.deadline, purgeAt: record.purgeAt, startedAt: record.startedAt, submittedAt: record.submittedAt ?? null,
-    questions: active ? record.paper.questions : [], answers: active ? record.answers : {},
+    questions: active ? record.paper.questions.map(clientQuestion) : [], answers: active ? record.answers : {},
     total: record.paper.questions.length, answered: Object.keys(record.answers).length,
   };
 }

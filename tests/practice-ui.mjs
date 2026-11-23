@@ -149,9 +149,14 @@ try {
     {label:'Gross margin',amount:'€42,000'},
     {label:'Revenue',amount:'€120,000'},
   ],'chart legend values independently match the P&L table');
-  for(let q=9;q<=13;q++) assert.equal(await page.locator(`.practice-question-card[data-question-id="practice-q${q}"] .reference-cue`).count(),1,`Q${q} points to the shared portfolio figures`);
-  assert.equal(await page.locator('.practice-question-card[data-question-id="practice-q12"] .practice-table').count(),1,'Q12 keeps its consultant comparison table');
-  assert.equal(await page.locator('.practice-question-card[data-question-id="practice-q15"] .practice-table').count(),1,'Q15 keeps its portfolio comparison table');
+  const referenceQuestions = originalPaper.questions.filter(question => question.usesReferenceTable);
+  const tableQuestions = originalPaper.questions.filter(question => question.table);
+  assert.ok(referenceQuestions.length >= 1, 'the drawn paper uses the reference portfolio');
+  assert.ok(tableQuestions.length >= 1, 'the drawn paper includes a comparison table');
+  for (const question of originalPaper.questions) {
+    assert.equal(await page.locator(`.practice-question-card[data-question-id="${question.id}"] .reference-cue`).count(), question.usesReferenceTable ? 1 : 0);
+    if (question.table) assert.equal(await page.locator(`.practice-question-card[data-question-id="${question.id}"] .practice-table`).count(), 1);
+  }
   assert.equal(await page.locator('.practice-question-card input[type="radio"]').count(),60,'four native single-choice answers appear for each question');
   assert.equal(await page.locator('.practice-question-card fieldset').count(),15,'answer options are grouped by question');
   assert.ok(await page.locator('#practice-submit').isDisabled());
@@ -233,5 +238,5 @@ try {
   assert.equal(await late.locator('#practice-results').count(),0,'a late grade response cannot revive an expired result');
   assert.equal(pageErrors.length,0,`no browser errors: ${pageErrors.join('; ')}`);
   await context.close();
-  console.log('PASS: Chrome redesigned Mantu studio, source-matched 15-question practice, preflight timing, 8+7 sections, accessible question navigation and status filters, 60 choices, P&L reference/comparison tables, progress, editable review, four score bands, randomized retake, privacy, reduced motion, 320/390/1440px layouts, and late grade expiry.');
+  console.log('PASS: Chrome redesigned Mantu studio, rotated 15-question practice, preflight timing, 8+7 sections, accessible question navigation and status filters, 60 choices, P&L reference/comparison tables, progress, editable review, four score bands, randomized retake, privacy, reduced motion, 320/390/1440px layouts, and late grade expiry.');
 } finally {await browser.close();await new Promise(resolve=>server.close(resolve));}

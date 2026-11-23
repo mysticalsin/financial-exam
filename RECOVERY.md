@@ -30,14 +30,14 @@ Screenshots / studio mp4 under docs/screenshots were omitted (large binaries).
 | Live `/api/config` snapshot | `recovered-from-cloudflare/api-config.json` |
 | `robots.txt` | Recovered from live |
 | Durable Object class source | **Partial** — DO logic lives inside modular `src/worker.js` (Assessment namespace via `env.ATTEMPTS`); no separate DO file |
-| Question bank size | **Generative** templates in `src/bank.js` (~dozen item factories + random params), **not** a static 100–200 curated bank yet |
+| Question bank size | **200+ items** in `src/bank.js`. Each practice and recruitment attempt draws a different set of 15 (8 Foundations + 7 Applied Reading). Keys stay server-side. |
 | 15-minute timer | Config still defaults to 30; needs env/`DURATION_MINUTES=15` |
 | End-only scoring + explanations + luxurious UI + Rust hot paths + stress/perfection bar | **Project backlog** (not implemented in this recovery commit) |
 
 ## Tony requirements (Project backlog — do not treat as done)
 
 - 15-minute exam timer
-- 100–200 question rotation bank (anti-memorization)
+- 100–200 question rotation bank (anti-memorization) — source bank and draw are in place; not deployed
 - Score + right/wrong explanations **only at the end** (no per-question drip)
 - Rich / luxurious UI + animations
 - Uncheatable (server-side keys, no answer leakage)
