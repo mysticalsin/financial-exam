@@ -21,16 +21,20 @@ const requiredNotice = [
 
 const responseHeaders = {
   "Cache-Control": "private, no-store",
+  "CDN-Cache-Control": "no-store",
+  "Pragma": "no-cache",
+  "Vary": "Cookie, Authorization",
   "Content-Security-Policy": [
-    "default-src 'none'", "script-src 'self'", "style-src 'self'",
+    "default-src 'none'", "script-src 'self'", "script-src-attr 'none'", "style-src 'self'",
     "img-src 'self' data:", "font-src 'self'", "connect-src 'self'",
+    "worker-src 'none'", "frame-src 'none'",
     "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'", "form-action 'self'",
   ].join("; "),
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), display-capture=(), usb=(), clipboard-read=()",
   "Referrer-Policy": "no-referrer",
-  "Strict-Transport-Security": "max-age=31536000",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
   "X-Robots-Tag": "noindex, nofollow, noarchive",
@@ -91,6 +95,9 @@ function config(env) {
     reviewerConfigured(env) &&
     !!env.RATE_LIMITER && !!env.ATTEMPTS && !!env.RECORDS &&
     bounded(durationMinutes, 5, 55) && bounded(inviteTtlMinutes, 1, 30);
+  // Public config while recruitment is closed. The notice, country list, and invite
+  // lifetime are hiring configuration; practice only needs the closed flag and duration.
+  if (!enabled) return { enabled: false, durationMinutes };
   return { enabled, durationMinutes, inviteTtlMinutes, countries,
     notice: countries.length === 1 ? approved[countries[0]] : null };
 }
@@ -120,11 +127,16 @@ function equalDigest(left, right) {
 }
 
 function requestCookie(request) {
+  // One host cookie only. A second __Host-assessment value is ambiguous, so neither is accepted.
+  let found = null;
   for (const part of (request.headers.get("Cookie") ?? "").split(";")) {
     const value = part.trim();
-    if (value.startsWith(COOKIE + "=")) return TOKEN.exec(value.slice(COOKIE.length + 1));
+    if (!value.startsWith(COOKIE + "=")) continue;
+    const token = TOKEN.exec(value.slice(COOKIE.length + 1));
+    if (!token || found) return null;
+    found = token;
   }
-  return null;
+  return found;
 }
 
 function cookieHeader(value, until) {
@@ -132,8 +144,16 @@ function cookieHeader(value, until) {
   return COOKIE + "=" + value + "; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=" + seconds;
 }
 
+function rejectCrossSite(request) {
+  const site = request.headers.get("Sec-Fetch-Site");
+  // same-origin and navigational "none" stay allowed. A copied Origin cannot vouch for
+  // a browser that reports the request as cross-site or merely same-site.
+  demand(site !== "cross-site" && site !== "same-site", 403, "Please use the assessment page to make this change.");
+}
+
 function browserWrite(request, url) {
   demand(request.headers.get("Origin") === url.origin, 403, "Please use the assessment page to make this change.");
+  rejectCrossSite(request);
 }
 
 async function body(request, fields) {
@@ -222,13 +242,22 @@ async function adminRoute(request, env, url, settings) {
   }
   const match = /^\/api\/ops\/attempts\/([0-9a-f]{32})$/.exec(url.pathname);
   if (match && (request.method === "GET" || request.method === "DELETE")) {
-    return callAttempt(env, match[1], request.method === "GET" ? "export" : "erase");
+    const result = await callAttempt(env, match[1], request.method === "GET" ? "export" : "erase");
+    if (request.method !== "GET" || !result.ok) return result;
+    const payload = await result.json();
+    demand(payload && payload.reference === match[1], 404, "No retained record found.");
+    for (const field of ["invite", "inviteHash", "sessionHash", "paper", "key", "claim", "answers", "copiedQuestionIds", "integrityMasks"]) {
+      delete payload[field];
+    }
+    return json(payload);
   }
   throw new RequestError(404, "Route not found.");
 }
 
 async function candidateRoute(request, env, url, settings) {
   const session = requestCookie(request);
+  // Kept in front of the session block so the limiter insertion in #16 still applies cleanly.
+  if (session) rejectCrossSite(request);
   const path = url.pathname;
   if (path === "/api/config" && request.method === "GET") return json(settings);
   if (path === "/api/session" && request.method === "GET") {
@@ -318,10 +347,11 @@ export default {
       const url = new URL(request.url);
       const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
       demand(url.protocol === "https:" || loopback, 400, "An HTTPS connection is required.");
+      if (!url.pathname.startsWith("/api/") && invitationInQuery(url)) return stripInvitationQuery(url);
       if (url.pathname.startsWith("/api/")) {
         demand(!url.search, 400, "Use the assessment page to make this request.");
         if (url.pathname === "/api/practice/start" || url.pathname === "/api/practice/submit")
-          return await handlePractice(request, env, throttle);
+          return hardenResponse(await handlePractice(request, env, throttle));
         const settings = config(env);
         return url.pathname.startsWith("/api/ops/")
           ? await adminRoute(request, env, url, settings)
@@ -331,10 +361,33 @@ export default {
       const asset = await env.ASSETS.fetch(request);
       const response = new Response(asset.body, asset);
       for (const [header, value] of Object.entries(responseHeaders)) response.headers.set(header, value);
+      response.headers.delete("Set-Cookie");
       return response;
     } catch (error) { return failure(error); }
   },
 };
+
+function invitationInQuery(url) {
+  for (const [name, value] of url.searchParams) {
+    if (name.toLowerCase() === "invite") return true;
+    if (/^[0-9a-f]{32}\.[0-9a-f]{64}$/.test(value)) return true;
+  }
+  return false;
+}
+
+function stripInvitationQuery(url) {
+  // The fragment is the only invitation channel. Drop a query copy without echoing it.
+  let path = url.pathname;
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\") || path.includes("\0")) path = "/";
+  return new Response(null, { status: 303, headers: { ...responseHeaders, Location: path } });
+}
+
+function hardenResponse(response) {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(responseHeaders)) headers.set(name, value);
+  headers.delete("Set-Cookie");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
 
 function candidateState(record) {
   const active = record.status === "active";
