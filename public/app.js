@@ -386,17 +386,11 @@ function landing(focus = false) {
   const canStart = Boolean(invite && config?.enabled && invitation);
   const waiting = Boolean(invite && initializing);
   trigger.disabled = waiting;
-  trigger.replaceChildren(
-    document.createTextNode(
-      canStart
-        ? "Review your invitation "
-        : waiting
-          ? "Checking invitation "
-          : "Start practice assessment ",
-    ),
-    el("span", "", canStart ? "→" : "↗"),
-  );
-  trigger.lastChild.setAttribute("aria-hidden", "true");
+  trigger.textContent = canStart
+    ? "Review your invitation"
+    : waiting
+      ? "Checking invitation"
+      : "Start practice assessment";
   trigger.onclick = () => {
     if (canStart) preflight();
     else if (!waiting) window.dispatchEvent(new Event("assessment:practice-start"));

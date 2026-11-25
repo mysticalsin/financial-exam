@@ -268,10 +268,13 @@ function progressHeader() {
   const rail = el("div", "practice-progress-shell");
   const progress = el("progress", "practice-progress"); progress.id = "practice-progress"; progress.max = total; progress.value = answeredCount();
   progress.setAttribute("aria-label", "Questions answered");
+  const track = el("div", "practice-progress-track");
+  const fill = el("span", "practice-progress-fill"); fill.id = "practice-progress-fill";
+  track.append(fill);
   const labels = el("div", "practice-progress-labels");
   const count = el("span", "practice-answered"); count.id = "practice-answered"; count.textContent = `${answeredCount()} of ${total} answered`;
   const pct = el("span", "practice-percent"); pct.id = "practice-percent"; pct.textContent = `${Math.round(answeredCount() / total * 100)}%`;
-  labels.append(count, pct); rail.append(progress, labels);
+  labels.append(count, pct); rail.append(progress, track, labels);
   header.append(brand, rail);
   return header;
 }
@@ -286,6 +289,8 @@ function updateProgress() {
   const count = answeredCount();
   const progress = $("practice-progress");
   if (progress) progress.value = count;
+  const fill = $("practice-progress-fill");
+  if (fill) fill.style.setProperty("--progress-ratio", String(total ? count / total : 0));
   const countLabel = $("practice-answered");
   if (countLabel) countLabel.textContent = `${count} of ${total} answered`;
   const pctLabel = $("practice-percent");
@@ -525,10 +530,21 @@ function renderResult() {
   const layout = el("div", "result-dashboard");
   const scorePanel = el("section", "result-score-panel"); scorePanel.setAttribute("aria-label", "Your practice score");
   const circle = el("div", "score-circle"); circle.setAttribute("role", "img"); circle.setAttribute("aria-label", `${score} out of ${total}; ${bandFor(score)}`);
+  circle.style.setProperty("--score-ratio", `${total ? score / total : 0}`);
+  const ring = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  ring.setAttribute("class", "score-ring");
+  ring.setAttribute("viewBox", "0 0 120 120");
+  ring.setAttribute("aria-hidden", "true");
+  for (const name of ["score-ring-track", "score-ring-value"]) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    path.setAttribute("class", name);
+    path.setAttribute("cx", "60");
+    path.setAttribute("cy", "60");
+    path.setAttribute("r", "54");
+    ring.append(path);
+  }
   const scoreText = el("strong", "score-value", String(score));
-  circle.append(scoreText, el("span", "score-divider", "/"), el("span", "score-total", String(total)));
-  circle.style.setProperty("--score-ratio", `${score / total}`);
-  circle.style.setProperty("--score-turn", `${score / total * 360}deg`);
+  circle.append(ring, scoreText, el("span", "score-divider", "/"), el("span", "score-total", String(total)));
   const activeBand = bandFor(score);
   const band = el("p", "result-band", activeBand); band.setAttribute("aria-live", "polite");
   const answered = el("p", "result-answered", `${resultAnswered} of ${total} answered`);
