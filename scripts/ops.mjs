@@ -20,7 +20,26 @@ if (action === 'invite') {
   throw new Error('Usage: npm run ops -- invite <country> [minutes] | get <reference> | delete <reference> --confirm');
 }
 const response = await fetch(new URL(path,base), {method, redirect:'error', headers:{'Authorization':'Bearer ' + token,...(body ? {'Content-Type':'application/json'} : {})}, body:body && JSON.stringify(body)});
-const data = await response.json();
-if (!response.ok) { console.error(data.error || 'Request failed.'); process.exitCode=1; }
-else if (action === 'invite') console.log(JSON.stringify({reference:data.reference,expiresAt:data.expiresAt,url:new URL('/#invite=' + data.invite, base).href},null,2));
-else console.log(JSON.stringify(data,null,2));
+const raw = await response.text();
+let data;
+try { data = JSON.parse(raw); }
+catch {
+  console.error('The operations service did not return JSON. Sign in through Access or check the assessment URL.');
+  process.exitCode = 1;
+}
+if (data && typeof data === 'object') {
+  if (!response.ok) { console.error(data.error || 'Request failed.'); process.exitCode = 1; }
+  else if (action === 'invite') console.log(JSON.stringify({
+    reference: data.reference,
+    examMinutes: Number.isInteger(data.durationMinutes) ? data.durationMinutes : null,
+    startBy: data.expiresAt ?? null,
+    hardEnd: data.hardEnd ?? null,
+    expiresAt: data.expiresAt,
+    clocks: 'startBy and expiresAt are when an unused link stops opening. That is not the exam clock. examMinutes is the exam length after the candidate starts. hardEnd is the latest moment that exam can reach.',
+    url: new URL('/#invite=' + data.invite, base).href,
+  }, null, 2));
+  else {
+    if (action === 'get') console.error('Clocks: inviteExpiresAt is when an unused link stops opening. deadline is when the exam clock ends. purgeAt is when the record is erased. These are different clocks.');
+    console.log(JSON.stringify(data, null, 2));
+  }
+}

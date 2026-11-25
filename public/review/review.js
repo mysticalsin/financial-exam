@@ -23,6 +23,15 @@ function serverTime() {
 }
 let pageGeneration = 0;
 let operationPending = false;
+let selectPrivateLink = false;
+const ACCESS_DENIED = 'Staff access is required. Open this page through the organization’s configured reviewer sign-in.';
+const CLOSED_RECRUITMENT = 'Scored recruitment is closed. New invitations cannot be created. Existing records can still be retrieved and erased.';
+
+function accessError(message) {
+  const error = new Error(message || 'Reviewer sign-in required.');
+  error.accessDenied = true;
+  return error;
+}
 
 async function api(path, method = 'GET', body) {
   const response = await fetch('/api/ops/' + path, {
@@ -30,15 +39,23 @@ async function api(path, method = 'GET', body) {
     headers: method === 'GET' ? {} : {'Content-Type': 'application/json'},
     body: body === undefined ? undefined : JSON.stringify(body)
   });
-  if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('Sign in through the reviewer Access application.');
+  if (!response.headers.get('content-type')?.includes('application/json')) throw accessError('Sign in through the reviewer Access application.');
   const stamp = Date.parse(response.headers.get('date') || '');
   if (Number.isFinite(stamp)) {
     clockOffset = stamp + 1000 - Date.now();
     serverTime();
   }
   const data = await response.json();
+  if (response.status === 401 || response.status === 403) throw accessError(data.error);
   if (!response.ok) throw new Error(data.error || 'The request could not be completed.');
   return data;
+}
+
+function denyAccess() {
+  clearReviewerState();
+  el('workspace').hidden = true;
+  el('create').hidden = true;
+  el('access').textContent = ACCESS_DENIED;
 }
 
 async function run(task) {
@@ -50,13 +67,30 @@ async function run(task) {
   controls.forEach(control => control.disabled = true);
   el('status').textContent = '';
   try { await task(current); }
-  catch (error) { if (current()) el('status').textContent = error.message || 'Request failed. Please retry.'; }
+  catch (error) {
+    if (error?.accessDenied) {
+      if (generation === pageGeneration) denyAccess();
+      return;
+    }
+    if (current()) el('status').textContent = error.message || 'Request failed. Please retry.';
+  }
   finally {
     if (generation === pageGeneration) {
       controls.forEach(control => control.disabled = false);
       operationPending = false;
+      if (selectPrivateLink) {
+        selectPrivateLink = false;
+        el('invite').focus();
+        el('invite').select();
+      }
     }
   }
+}
+
+function closeConfirm(restoreFocus) {
+  const dialog = el('confirm');
+  if (dialog.open) dialog.close();
+  if (restoreFocus && record && !el('erase').disabled) el('erase').focus();
 }
 
 function resetRecord() {
@@ -65,7 +99,7 @@ function resetRecord() {
   record = undefined;
   el('record').replaceChildren();
   el('result').hidden = true;
-  el('confirm').hidden = true;
+  closeConfirm(false);
 }
 
 function clearLookup() {
@@ -79,6 +113,7 @@ function clearLink() {
   el('issued').hidden = true;
   el('invite').value = '';
   el('issued-ref').textContent = '';
+  el('issued-note').textContent = '';
 }
 function detail(container, label, value) {
   const dt = document.createElement('dt'), dd = document.createElement('dd');
@@ -86,6 +121,9 @@ function detail(container, label, value) {
   container.append(dt, dd);
 }
 function closedRecord(data) { return ['submitted','completed','expired'].includes(data.status); }
+function formatClock(value) {
+  return Number.isFinite(value) ? new Date(value).toLocaleString() : '';
+}
 function showIntegritySummary(data) {
   if (!closedRecord(data)) return;
   const summary = data.integritySummary;
@@ -149,34 +187,76 @@ function tableLearningPrompt(data) {
   const euro = value => /€|eur/i.test(value) ? value : '€' + value;
   return `Using this candidate’s ${euro(revenue)} revenue and ${euro(costs)} direct costs, walk me through gross margin in euros and as a percentage. Ask which calculation they used and whether any technical issue affected their work.`;
 }
+function applyRecruitmentMode(config) {
+  const countries = new Intl.DisplayNames(['en'],{type:'region'});
+  el('country').replaceChildren();
+  for (const country of config.countries || []) {
+    const option = document.createElement('option');
+    option.value = country; option.textContent = countries.of(country) || country;
+    el('country').append(option);
+  }
+  el('minutes').placeholder = String(config.durationMinutes || 30);
+  const ttl = Number.isInteger(config.inviteTtlMinutes) ? config.inviteTtlMinutes : null;
+  el('minutes-help').textContent = ttl
+    ? `Exam length, counted from the moment the candidate starts. The private link has a separate start-by window of up to ${ttl} minutes, and that window shrinks when a longer exam would pass the one-hour limit. The start-by time is not the exam clock.`
+    : 'Exam length, counted from the moment the candidate starts. The private link has a separate start-by time. That time is not the exam clock.';
+  const open = config.enabled === true;
+  el('create').hidden = !open;
+  el('lede').textContent = open
+    ? 'Create a private invitation or retrieve one assessment using its reference.'
+    : 'Retrieve one assessment using its reference. New invitations stay off while scored recruitment is closed.';
+  el('access').textContent = open ? 'Signed in through staff access.' : CLOSED_RECRUITMENT;
+}
 
 el('issue').addEventListener('submit', event => {
   event.preventDefault();
   run(async current => {
-    clearLink();
     const minutes = el('minutes').value;
     const data = await api('invites','POST',{country:el('country').value,...(minutes ? {durationMinutes:Number(minutes)} : {})});
     if (!current()) return;
-    if (data.expiresAt && serverTime() >= data.expiresAt) throw new Error('The invitation expired before it could be displayed. Create a new invitation.');
-    linkUntil = data.expiresAt;
-    invitationTimer = setTimeout(clearLink,Math.max(0,linkUntil - serverTime()));
+    if (data.expiresAt && serverTime() >= data.expiresAt) {
+      clearLink();
+      throw new Error('The invitation expired before it could be displayed. Create a new invitation.');
+    }
+    clearTimeout(invitationTimer);
+    linkUntil = data.expiresAt || 0;
+    if (linkUntil) invitationTimer = setTimeout(clearLink,Math.max(0,linkUntil - serverTime()));
+    const examMinutes = Number.isInteger(data.durationMinutes) ? data.durationMinutes : Number(minutes);
+    const startBy = formatClock(data.expiresAt);
     el('issued-ref').textContent = data.reference;
     el('invite').value = new URL('/#invite=' + data.invite, location.origin).href;
+    el('issued-note').textContent = startBy
+      ? `Exam length is ${examMinutes} minutes from the moment the candidate starts. The candidate must open this link before ${startBy}. That start-by time is not the exam clock.`
+      : `Exam length is ${examMinutes} minutes from the moment the candidate starts. The link's start-by time is not the exam clock.`;
     el('issued').hidden = false;
-    el('status').textContent = 'Invitation created. This link is shown once.';
+    el('status').textContent = 'Invitation created. This link is shown once. The start-by time is not the exam clock.';
   });
 });
 el('hide-link').onclick = clearLink;
 el('copy').onclick = () => run(async () => {
-  await navigator.clipboard.writeText(el('invite').value);
-  el('status').textContent = 'Private link copied.';
+  try {
+    await navigator.clipboard.writeText(el('invite').value);
+    el('status').textContent = 'Private link copied.';
+  } catch {
+    selectPrivateLink = true;
+    throw new Error('Clipboard is unavailable. Select the private link and copy it.');
+  }
 });
-el('ref').oninput = resetRecord;
+el('ref').addEventListener('input', () => {
+  const lowered = el('ref').value.toLowerCase();
+  if (lowered !== el('ref').value) {
+    const at = el('ref').selectionStart;
+    el('ref').value = lowered;
+    if (at !== null) el('ref').setSelectionRange(at, at);
+  }
+  resetRecord();
+});
 el('lookup').addEventListener('submit', event => {
   event.preventDefault();
   run(async current => {
     resetRecord();
-    const referenceValue = el('ref').value.trim();
+    const referenceValue = el('ref').value.trim().toLowerCase();
+    el('ref').value = referenceValue;
     const data = await api('attempts/' + referenceValue);
     if (!current()) return;
     if (data.purgeAt && serverTime() >= data.purgeAt) {
@@ -187,14 +267,26 @@ el('lookup').addEventListener('submit', event => {
     recordUntil = data.purgeAt;
     purgeTimer = setTimeout(clearLookup,Math.max(0,recordUntil - serverTime()));
     const info = document.createElement('dl');
+    const closed = closedRecord(data);
     detail(info,'Reference',data.reference);
     detail(info,'Status',data.status);
-    if (Number.isInteger(data.score)) detail(info,'Score',data.score + ' / ' + data.total);
-    showIntegritySummary(data);
-    if (data.purgeAt) detail(info,'Scheduled erasure',new Date(data.purgeAt).toLocaleString());
+    if (Number.isInteger(data.durationMinutes)) detail(info,'Exam length',data.durationMinutes + ' minutes from the start. This is the exam clock.');
+    if (data.status === 'invited') detail(info,'Exam clock','Not started. It starts when the candidate starts, and only if that is before the start-by time.');
+    const examEnds = formatClock(data.deadline);
+    if (examEnds) detail(info,'Exam clock ends',examEnds + ' — answering stops. This is not the invitation start-by time.');
+    const startBy = formatClock(data.inviteExpiresAt);
+    if (startBy) detail(info,'Invitation start-by',startBy + ' — an unused link stops opening. This is not the exam clock.');
+    const erasure = formatClock(data.purgeAt);
+    if (erasure) detail(info,'Scheduled erasure',erasure + ' — the record is deleted. This is not the exam clock.');
+    if (closed && Number.isInteger(data.score)) detail(info,'Score',data.score + ' / ' + data.total);
+    else if (!closed) detail(info,'Score','Hidden until the attempt is submitted or the exam clock ends.');
+    else detail(info,'Score','No submitted score on this closed record.');
+    if (!closed) detail(info,'Answer key','Hidden until the attempt is submitted or the exam clock ends.');
+    else if (Number.isInteger(data.answered) && Number.isInteger(data.total)) detail(info,'Progress',data.answered + ' of ' + data.total + ' saved');
     el('record').append(info);
-    const responses = Array.isArray(data.responses) ? data.responses : [];
-    const filtersSupported = closedRecord(data) && responses.length > 0 && responses.every(response => responseCorrect(response) !== null);
+    showIntegritySummary(data);
+    const responses = closed && Array.isArray(data.responses) ? data.responses : [];
+    const filtersSupported = closed && responses.length > 0 && responses.every(response => responseCorrect(response) !== null);
     let filter = 'all';
     let filterNav;
     if (filtersSupported) {
@@ -227,6 +319,8 @@ el('lookup').addEventListener('submit', event => {
       if (filtersSupported && response.selected.length) detail(answers,'Result',responseCorrect(response) ? 'Correct' : 'Incorrect');
       item.append(heading);
       if (response.table) {
+        const scroller = document.createElement('div');
+        scroller.className = 'table-scroll';
         const table = document.createElement('table');
         const caption = table.createCaption();
         caption.textContent = 'Reference figures';
@@ -244,13 +338,14 @@ el('lookup').addEventListener('submit', event => {
             cell.textContent = value; row.append(cell);
           });
         }
-        item.append(table);
+        scroller.append(table);
+        item.append(scroller);
       }
       item.append(answers); responseHost.append(item);
       }
     }
     renderResponses();
-    if (closedRecord(data)) {
+    if (closed) {
       const prompt = tableLearningPrompt(data);
       if (prompt) {
         const guide = document.createElement('aside'); guide.className='learning-prompt';
@@ -263,10 +358,18 @@ el('lookup').addEventListener('submit', event => {
     el('status').textContent = 'Record retrieved.';
   });
 });
-el('erase').onclick = () => { el('confirm').hidden=false; el('cancel').focus(); };
-el('cancel').onclick = () => { el('confirm').hidden=true; el('erase').focus(); };
+el('erase').onclick = () => {
+  const dialog = el('confirm');
+  if (!dialog.open) dialog.showModal();
+  el('cancel').focus();
+};
+el('cancel').onclick = () => closeConfirm(true);
+el('confirm').addEventListener('cancel', event => {
+  event.preventDefault();
+  closeConfirm(true);
+});
 el('erase-confirm').onclick = () => run(async () => {
-  if (!record || record.reference !== el('ref').value.trim()) return;
+  if (!record || record.reference !== el('ref').value.trim().toLowerCase()) return;
   await api('attempts/' + record.reference,'DELETE',{});
   resetRecord(); el('ref').value = ''; el('status').textContent = 'Assessment record erased.';
 });
@@ -285,23 +388,30 @@ function clearReviewerState() {
   for (const control of el('workspace').querySelectorAll('button,input,select')) control.disabled = false;
   clearLink();
   clearLookup();
-  el('confirm').hidden = true;
+  closeConfirm(false);
 }
 try {
   const data = await api('whoami');
-  if (data.authorized !== true) throw new Error();
-  el('access').textContent = 'Signed in through staff access.';
-  el('workspace').hidden = false;
-  const config = await fetch('/api/config',{cache:'no-store'}).then(response => response.json());
-  const countries = new Intl.DisplayNames(['en'],{type:'region'});
-  for (const country of config.countries || []) {
-    const option = document.createElement('option');
-    option.value = country; option.textContent = countries.of(country);
-    el('country').append(option);
+  if (data.authorized !== true) throw accessError('Staff access is required.');
+  let config;
+  try {
+    const configResponse = await fetch('/api/config',{cache:'no-store'});
+    if (!configResponse.ok || !configResponse.headers.get('content-type')?.includes('application/json')) throw new Error('settings');
+    config = await configResponse.json();
+    if (!config || typeof config !== 'object') throw new Error('settings');
+  } catch {
+    el('create').hidden = true;
+    el('workspace').hidden = false;
+    el('lede').textContent = 'Retrieve one assessment using its reference.';
+    el('access').textContent = 'Staff access is confirmed, but recruitment settings could not be loaded. New invitations stay off. Existing records can still be retrieved and erased.';
+    config = null;
   }
-  el('issue').hidden = !config.enabled;
-  el('minutes').placeholder = String(config.durationMinutes || 30);
-  if (!config.enabled) el('access').textContent = 'Recruitment is closed. Existing records can still be retrieved and erased.';
-} catch {
-  el('access').textContent = 'Staff access is required. Open this page through the organization’s configured reviewer sign-in.';
+  if (config) {
+    el('workspace').hidden = false;
+    applyRecruitmentMode(config);
+  }
+} catch (error) {
+  el('workspace').hidden = true;
+  el('create').hidden = true;
+  el('access').textContent = error?.accessDenied ? ACCESS_DENIED : (error?.message || 'The reviewer workspace could not be opened. Please retry.');
 }
