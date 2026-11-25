@@ -16,6 +16,11 @@ let issueGate;
 let lookupGate;
 let failLookup = false;
 let expiredLookup = false;
+let failIssue = false;
+let recruitmentEnabled = true;
+let configAvailable = true;
+let whoamiMode = 'allow';
+let denyOps = false;
 let responseStatus = 'submitted';
 let copyShortcutCount = 2;
 let includeCopyShortcutCount = true;
@@ -27,6 +32,8 @@ function controlledGate() {
   return {started:new Promise(resolve => started=resolve), wait:new Promise(resolve => release=resolve), markStarted:() => started(), release:() => release()};
 }
 const responseForRecord = (purgeAt = Date.now()+60000) => ({reference,status:responseStatus,score:1,total:1,purgeAt,
+  durationMinutes:40,inviteExpiresAt:Date.now()+20*60000,
+  ...(responseStatus === 'invited' ? {} : {deadline:Date.now()+40*60000,startedAt:Date.now()}),
   referenceTable:{headers:['Line','Revenue'],rows:[['Revenue','€900,000'],['Team A','€300,000'],['Team B','€300,000'],['Team C','€300,000'],['Team D','€0']]},
   ...(includeCopyShortcutCount ? {copiedQuestionCount:copyShortcutCount} : {}),
   notice: modernNotice ? {integrityReview:true} : {copyShortcutReview:includeCopyShortcutCount},
@@ -54,13 +61,22 @@ try {
     }
     calls.push([req.method(),url.pathname]);
     let json;
-    if (url.pathname === '/api/ops/whoami') json={authorized:true};
-    else if (url.pathname === '/api/config') json={enabled:true,durationMinutes:30,countries:['FR','BR']};
+    if (url.pathname === '/api/ops/whoami') {
+      if (whoamiMode === 'html') return route.fulfill({status:200,contentType:'text/html',body:'<html>Access</html>'});
+      if (whoamiMode === 'deny') return route.fulfill({status:403,json:{error:'Reviewer sign-in required.'},headers:{Date:new Date().toUTCString()}});
+      json={authorized:true};
+    }
+    else if (url.pathname === '/api/config') {
+      if (!configAvailable) return route.fulfill({status:503,json:{error:'Settings unavailable'},headers:{Date:new Date().toUTCString()}});
+      json={enabled:recruitmentEnabled,durationMinutes:30,inviteTtlMinutes:30,countries:['FR','BR']};
+    }
     else if (url.pathname === '/api/ops/invites') {
+      if (failIssue) { failIssue=false; return route.fulfill({status:503,json:{error:'Synthetic invitation failure'},headers:{Date:new Date().toUTCString()}}); }
       assert.deepEqual(req.postDataJSON(),{country:'BR',durationMinutes:40});
-      json={reference,invite:reference+'.'+'2'.repeat(64),expiresAt:Date.now()+60000};
+      json={reference,invite:reference+'.'+'2'.repeat(64),expiresAt:Date.now()+60000,durationMinutes:40,hardEnd:Date.now()+3600000};
       if (delayIssue) { delayIssue=false; const gate=issueGate; gate.markStarted(); await gate.wait; }
     } else if (url.pathname === '/api/ops/attempts/'+reference) {
+      if (denyOps) return route.fulfill({status:403,json:{error:'Reviewer sign-in required.'},headers:{Date:new Date().toUTCString()}});
       if (req.method()==='DELETE') {assert.deepEqual(req.postDataJSON(),{});erased=true;json={erased:true};}
       else {
         if (failLookup) { failLookup=false; return route.fulfill({json:{error:'Synthetic reviewer lookup failure'},status:503,headers:{Date:new Date().toUTCString()}}); }
@@ -72,16 +88,30 @@ try {
     return route.fulfill({json,headers:{Date:new Date().toUTCString()}});
   });
   await page.goto(origin+'/review/');
+  await page.getByText(/up to 30 minutes/).waitFor();
+  assert.match(await page.locator('#minutes-help').innerText(),/start-by/i);
+  assert.match(await page.locator('#minutes-help').innerText(),/not the exam clock/i);
   await page.locator('#country').selectOption('BR');
-  await page.getByLabel('Time allowance in minutes').fill('40');
+  await page.getByLabel('Exam length in minutes').fill('40');
   await page.getByRole('button',{name:'Create invitation'}).click();
   await page.locator('#issued').waitFor();
   assert.ok((await page.locator('#invite').inputValue()).startsWith(origin+'/#invite='));
+  const issuedNote = await page.locator('#issued-note').innerText();
+  assert.match(issuedNote,/40 minutes/);
+  assert.match(issuedNote,/open this link before/i);
+  assert.match(issuedNote,/not the exam clock/i);
+  assert.match(await page.locator('#status').innerText(),/not the exam clock/i);
   await page.getByRole('button',{name:'Clear link'}).click();
   assert.equal(await page.locator('#invite').inputValue(),'');
   await page.getByLabel('Assessment reference').fill(reference);
   await page.getByRole('button',{name:'Find assessment'}).click();
   await page.getByText('1 / 1',{exact:true}).waitFor();
+  const recordText = await page.locator('#record').innerText();
+  assert.match(recordText,/Exam length/);
+  assert.match(recordText,/Exam clock ends/);
+  assert.match(recordText,/Invitation start-by/);
+  assert.match(recordText,/not the exam clock/i);
+  assert.match(recordText,/Scheduled erasure/);
   assert.match(await page.locator('.copy-shortcut-context').innerText(),/2 distinct questions reported/);
   assert.match(await page.locator('.copy-shortcut-context').innerText(),/cannot establish outside assistance/);
   await page.getByRole('button',{name:'Incorrect',exact:true}).click();
@@ -161,8 +191,20 @@ try {
   await page.getByLabel('Assessment reference').fill('');
   await page.getByLabel('Assessment reference').fill(reference);
   await page.getByRole('button',{name:'Find assessment'}).click();
-  await page.getByText('1 / 1',{exact:true}).waitFor();
+  await page.getByText('Hidden until the attempt is submitted or the exam clock ends.').first().waitFor();
+  assert.equal(await page.getByText('1 / 1',{exact:true}).count(),0,'an active record does not show a score');
+  assert.equal(await page.getByText('€10').count(),0,'an active record does not show expected answers');
+  assert.equal(await page.locator('.response-list details').count(),0,'an active record does not list responses');
+  assert.equal(await page.locator('.learning-prompt').count(),0,'an active record does not offer the learning prompt');
   assert.equal(await page.locator('.copy-shortcut-context').count(),0,'active assessment records do not show a completed-result context line');
+  responseStatus='invited';
+  await page.getByLabel('Assessment reference').fill('');
+  await page.getByLabel('Assessment reference').fill(reference.toUpperCase());
+  await page.getByRole('button',{name:'Find assessment'}).click();
+  await page.getByText('Not started.').waitFor();
+  assert.equal(await page.locator('#ref').inputValue(),reference,'a pasted uppercase reference is looked up in lowercase');
+  assert.equal(await page.getByText('€10').count(),0,'an unused invitation does not show an answer key');
+  assert.match(await page.locator('#record').innerText(),/before the start-by time/i);
   responseStatus='submitted';
   await page.getByLabel('Assessment reference').fill('');
 
@@ -175,6 +217,14 @@ try {
   await page.getByText('1 / 1',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Erase record…'}).click();
   assert.equal(await page.locator('#confirm').isVisible(),true);
+  assert.equal(await page.locator('#confirm').getAttribute('open'),'','erasure confirmation is a modal dialog');
+  await page.evaluate(() => {
+    Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});
+    window.dispatchEvent(new Event('pagehide'));
+  });
+  assert.equal(await page.locator('#confirm').isVisible(),false,'pagehide must close an open confirmation dialog');
+  assert.equal(await page.locator('#result').isVisible(),false,'pagehide clears the open record');
+  await setVisibility('visible');
   delayIssue=true;
   issueGate=controlledGate();
   await page.getByRole('button',{name:'Create invitation'}).click();
@@ -185,7 +235,6 @@ try {
   });
   assert.equal(await page.locator('#issued').isVisible(),false);
   assert.equal(await page.locator('#invite').inputValue(),'');
-  assert.equal(await page.locator('#confirm').isVisible(),false,'pagehide must close an open confirmation dialog');
   issueGate.release();
   await page.waitForTimeout(50);
   assert.equal(await page.locator('#issued').isVisible(),false,'late issue response must not restore private link');
@@ -255,5 +304,130 @@ try {
   await page.getByRole('button',{name:'Incorrect',exact:true}).focus();
   await page.keyboard.press('Enter');
   assert.equal(await page.locator('.response-list details').count(),1,'reviewer filters work from the keyboard at mobile width');
-  console.log('Reviewer browser passed visible errors, hide/pagehide clearing, stale issue and lookup suppression, simulated sleep expiry, and assessment review/erase flows (synthetic Access/API responses).');
+  const pressedContrast = await page.locator('.response-filters button[aria-pressed=true]').evaluate(node => {
+    const parse = color => {
+      const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([0-9.]+))?\)/);
+      if (!match || match[4] === '0') return null;
+      return match.slice(1, 4).map(Number);
+    };
+    const channel = value => {
+      const scaled = value / 255;
+      return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+    };
+    const luminance = rgb => 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+    const ratio = (left, right) => {
+      const light = Math.max(luminance(left), luminance(right));
+      const dark = Math.min(luminance(left), luminance(right));
+      return (light + 0.05) / (dark + 0.05);
+    };
+    const style = getComputedStyle(node);
+    let background = parse(style.backgroundColor);
+    let surface = node.parentElement;
+    let behind = null;
+    while (surface) {
+      behind = parse(getComputedStyle(surface).backgroundColor);
+      if (behind) break;
+      surface = surface.parentElement;
+    }
+    return {
+      text: ratio(parse(style.color), background),
+      outline: ratio(parse(style.outlineColor), behind || [255, 255, 255]),
+    };
+  });
+  assert.ok(pressedContrast.text >= 4.5, `pressed filter text contrast is ${pressedContrast.text.toFixed(2)}`);
+  assert.ok(pressedContrast.outline >= 3, `pressed filter indicator contrast is ${pressedContrast.outline.toFixed(2)}`);
+  for (let step = 0; step < 6; step++) {
+    if (await page.evaluate(() => document.activeElement?.tagName === 'SUMMARY')) break;
+    await page.keyboard.press('Tab');
+  }
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'SUMMARY', 'keyboard reaches a response summary');
+  assert.notEqual(await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle), 'none', 'response summary keeps a visible focus ring');
+  await page.getByRole('button',{name:'All',exact:true}).click();
+  await page.getByText('Fictional arithmetic').click();
+  await page.getByRole('cell',{name:'€120,000'}).waitFor();
+  for (const [width, height, label] of [[320, 780, '320 reviewer'], [390, 320, 'short reviewer']]) {
+    await page.setViewportSize({width, height});
+    const box = await page.evaluate(() => ({width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth}));
+    assert.ok(box.scroll <= box.width + 1, `${label} has no horizontal overflow ${JSON.stringify(box)}`);
+  }
+  await page.getByRole('button',{name:'Erase record…'}).click();
+  const confirmReachable = await page.getByRole('button',{name:'Confirm erasure'}).evaluate(node => {
+    node.scrollIntoView({block:'nearest'});
+    const rect = node.getBoundingClientRect();
+    return rect.top >= -1 && rect.bottom <= window.innerHeight + 1 && rect.width > 40;
+  });
+  assert.equal(confirmReachable, true, 'erase confirmation is reachable on a short screen');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#confirm').isVisible(), false, 'Escape cancels erasure');
+  await page.setViewportSize({width:1280,height:800});
+
+  await page.getByRole('button',{name:'Create invitation'}).click();
+  await page.locator('#issued').waitFor();
+  const keptLink = await page.locator('#invite').inputValue();
+  failIssue = true;
+  await page.getByRole('button',{name:'Create invitation'}).click();
+  await page.getByText('Synthetic invitation failure').waitFor();
+  assert.equal(await page.locator('#invite').inputValue(), keptLink, 'a failed retry must not wipe the private link');
+  assert.equal(await page.locator('#issued').isVisible(), true);
+
+  denyOps = true;
+  await page.getByLabel('Assessment reference').fill(reference);
+  await page.getByRole('button',{name:'Find assessment'}).click();
+  await page.getByText('Staff access is required').waitFor();
+  assert.equal(await page.locator('#workspace').isVisible(), false, 'a rejected assertion closes the workspace');
+  assert.equal(await page.locator('#invite').inputValue(), '', 'a rejected assertion clears the private link');
+  denyOps = false;
+
+  recruitmentEnabled = false;
+  await page.goto(origin+'/review/');
+  await page.locator('#access').getByText('Scored recruitment is closed').waitFor();
+  assert.equal(await page.locator('#create').isVisible(), false, 'closed recruitment hides invitation creation');
+  assert.match(await page.locator('#lede').innerText(), /New invitations stay off/);
+  assert.match(await page.locator('#access').innerText(), /Existing records can still be retrieved and erased/);
+  await page.getByLabel('Assessment reference').fill(reference);
+  await page.getByRole('button',{name:'Find assessment'}).click();
+  await page.getByText('1 / 1',{exact:true}).waitFor();
+
+  recruitmentEnabled = true;
+  configAvailable = false;
+  await page.goto(origin+'/review/');
+  await page.getByText('recruitment settings could not be loaded').waitFor();
+  assert.equal(await page.locator('#workspace').isVisible(), true);
+  assert.equal(await page.locator('#create').isVisible(), false);
+  assert.doesNotMatch(await page.locator('#access').innerText(), /Staff access is required/);
+
+  configAvailable = true;
+  whoamiMode = 'html';
+  await page.goto(origin+'/review/');
+  await page.getByText('Staff access is required').waitFor();
+  assert.equal(await page.locator('#workspace').isVisible(), false, 'an Access login page is not the reviewer workspace');
+  whoamiMode = 'allow';
+
+  const invitePage = await browser.newPage();
+  const inviteSource = await readFile(new URL('../public/invite.js', import.meta.url), 'utf8');
+  await invitePage.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    assert.equal(url.origin, origin);
+    if (url.pathname === '/invite.js') return route.fulfill({contentType:'text/javascript', body:inviteSource});
+    if (url.pathname === '/') return route.fulfill({contentType:'text/html', body:'<!doctype html><script src="/invite.js"></script>'});
+    throw new Error('Unexpected invite route ' + url.pathname);
+  });
+  const token = reference + '.' + 'ab'.repeat(32);
+  const messy = '\n' + token.toUpperCase() + '.\n';
+  await invitePage.goto(origin + '/#' + new URLSearchParams({invite:messy}).toString());
+  assert.equal(await invitePage.evaluate(() => window.assessmentInvitation), token, 'a wrapped uppercase invitation normalizes to the claim token');
+  assert.equal(await invitePage.evaluate(() => location.hash), '', 'the invitation fragment is removed from the address bar');
+  await invitePage.goto(origin + '/?fresh=1#practice');
+  assert.equal(await invitePage.evaluate(() => window.assessmentInvitation), undefined, 'an unrelated fragment is not an invitation');
+  const next = 'cd'.repeat(16) + '.' + 'ef'.repeat(32);
+  const loaded = invitePage.waitForEvent('load');
+  try {
+    await invitePage.evaluate(value => { location.hash = '#invite=' + value; }, next.toUpperCase());
+  } catch (error) {
+    if (!/destroyed|navigation/i.test(String(error))) throw error;
+  }
+  await loaded;
+  assert.equal(await invitePage.evaluate(() => window.assessmentInvitation), next, 'a same-tab invitation reloads into a fresh claim');
+  assert.equal(await invitePage.evaluate(() => location.hash), '');
+  console.log('Reviewer browser passed visible errors, hide/pagehide clearing, stale issue and lookup suppression, simulated sleep expiry, invitation clocks, closed mode, and assessment review/erase flows (synthetic Access/API responses).');
 } finally {await browser.close();}

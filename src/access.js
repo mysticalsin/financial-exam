@@ -20,7 +20,7 @@ export async function authorizeReviewer(request, env) {
     const {payload} = await jwtVerify(token, cachedKeys, {
       issuer, audience: env.ACCESS_AUD, algorithms: ['RS256'], requiredClaims: ['exp','iat','sub','email']
     });
-    return payload.type === 'app' && typeof payload.email === 'string' && payload.email.length > 0;
+    return payload.type === 'app' && typeof payload.email === 'string' && /^[^\s@]+@[^\s@]+$/.test(payload.email);
   } catch {
     return false;
   }

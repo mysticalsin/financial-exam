@@ -22,6 +22,9 @@ test('reviewer access requires a verified, unexpired application token for a nam
   assert.equal(await authorizeReviewer(await request({iss:'https://other-team.cloudflareaccess.com'}),env),false);
   assert.equal(await authorizeReviewer(await request({exp:now-1}),env),false);
   assert.equal(await authorizeReviewer(await request({email:undefined}),env),false);
+  assert.equal(await authorizeReviewer(await request({email:' '}),env),false);
+  assert.equal(await authorizeReviewer(await request({email:'reviewer@example.invalid '}),env),false);
+  assert.equal(await authorizeReviewer(await request({email:'not an email'}),env),false);
   assert.equal(await authorizeReviewer(await request({type:'org'}),env),false);
   const unrelated=await generateKeyPair('RS256');
   assert.equal(await authorizeReviewer(await request({},unrelated.privateKey),env),false);
