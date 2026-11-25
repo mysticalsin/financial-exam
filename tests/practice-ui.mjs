@@ -21,7 +21,7 @@ const server = createServer(async (request,response) => {
       const now=Date.now();
       const starts=startedPapers.length+1;
       const challenge=`practice-challenge-${starts}`;
-      const deadline=now+(starts===5?10000:30*60000);
+      const deadline=now+(starts===5?10000:15*60000);
       startedPapers.push({paper,challenge,deadline});
       return json(200,{questions:paper.questions,referenceTable:paper.referenceTable,challenge,serverNow:now,deadline});
     }
@@ -63,6 +63,8 @@ const assertScore = async (page, expectedScore, band) => {
   assert.equal(await page.locator('.result-answered').innerText(),'15 of 15 answered');
   assert.ok((await page.locator('.result-reflection').innerText()).length>12,'result includes one band-appropriate next-practice prompt');
   assert.equal(await page.locator(`.score-band[data-score-band="${band.toLowerCase()}"]`).getAttribute('aria-current'),'true');
+  assert.equal(await page.locator('.score-bands').getAttribute('role'),'list');
+  assert.match(await page.locator('#practice-score-figure').getAttribute('aria-label'),new RegExp(`${expectedScore} out of 15, ${band} band`));
   assert.equal(await page.locator('.score-band[data-score-band]').count(),4);
   assert.match(await page.locator('body').innerText(),/not (?:used for hiring|shared with recruiters)|not a hiring assessment/i);
 };
@@ -102,7 +104,50 @@ try {
   assert.equal(await page.locator('#practice-intro').isVisible(),true);
   assert.equal((await page.locator('#landing-title').innerText()).replace(/\s+/g,' ').trim(),'Financial Test');
   assert.match(await page.locator('.studio-before').innerText(),/Before you start/);
-  assert.match(await page.locator('.welcome-scope').innerText(),/15 questions.*30 minutes/i);
+  await page.getByText('EXAMPLE PORTFOLIO').waitFor();
+  assert.match(await page.locator('.welcome-scope').innerText(),/15 questions.*15 minutes/i);
+  assert.equal(await page.locator('#hero-time').isHidden(),true,'the landing does not add a second duration beside the practice scope');
+  const contrast = await page.locator('.studio-before-privacy').evaluate((node) => {
+    const parse = (color) => {
+      const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      return match ? match.slice(1, 4).map(Number) : null;
+    };
+    const channel = (value) => {
+      const scaled = value / 255;
+      return scaled <= 0.04045 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+    };
+    const luminance = (rgb) => 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+    let background = node;
+    let paint = null;
+    while (background) {
+      paint = parse(getComputedStyle(background).backgroundColor);
+      if (paint && getComputedStyle(background).backgroundColor !== 'rgba(0, 0, 0, 0)') break;
+      background = background.parentElement;
+    }
+    const text = parse(getComputedStyle(node).color);
+    const light = Math.max(luminance(text), luminance(paint));
+    const dark = Math.min(luminance(text), luminance(paint));
+    return (light + 0.05) / (dark + 0.05);
+  });
+  assert.ok(contrast >= 4.5, `before-you-start privacy text contrast is ${contrast.toFixed(2)}`);
+  for (const [width, height, label] of [[320,950,'320 landing'],[390,844,'390 landing'],[844,390,'landscape landing'],[667,375,'compact landscape']]) {
+    await page.setViewportSize({width, height});
+    const box = await page.evaluate(() => ({width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth}));
+    assert.ok(box.scroll <= box.width + 1, `${label} has no horizontal overflow ${JSON.stringify(box)}`);
+  }
+  await page.setViewportSize({width:844, height:390});
+  const ctaOnScreen = await page.locator('#landing-action').evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.width > 40 && rect.top >= 0 && rect.bottom <= window.innerHeight + 1;
+  });
+  assert.equal(ctaOnScreen, true, 'the landscape start action is on the first screen');
+  await page.evaluate(() => window.scrollTo(0, 280));
+  const ctaReachable = await page.locator('#landing-action').evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.width > 40 && rect.top < window.innerHeight && rect.bottom > 0;
+  });
+  assert.equal(ctaReachable, true, 'the landscape start action stays reachable while the page scrolls');
+  await page.setViewportSize({width:320, height:950});
   assert.match(await page.locator('#practice-intro').innerText(),/Calculator use is fine/);
   assert.match(await page.locator('#practice-intro').innerText(),/Review and change answers before submitting/);
   assert.equal(await page.locator('#practice-intro input').count(),0,'practice welcome asks for no identity fields');
@@ -118,6 +163,14 @@ try {
   assert.equal(await page.evaluate(()=>sessionStorage.length+localStorage.length),0,'practice writes no browser storage');
   await page.getByRole('button',{name:/Start practice assessment/}).click();
   await page.locator('#practice-begin').waitFor();
+  await page.setViewportSize({width:700, height:360});
+  const beginReachable = await page.locator('#practice-begin').evaluate((node) => {
+    node.scrollIntoView({block:'nearest'});
+    const rect = node.getBoundingClientRect();
+    return rect.top >= -1 && rect.bottom <= window.innerHeight + 1 && rect.width > 40;
+  });
+  assert.equal(beginReachable, true, 'the practice start action is reachable in a short landscape dialog');
+  await page.setViewportSize({width:320, height:950});
   if(process.env.PRACTICE_UI_SCREENSHOT_DIR) await page.screenshot({path:`${process.env.PRACTICE_UI_SCREENSHOT_DIR}/preflight-390.png`,fullPage:true});
   assert.equal(await page.getByRole('button',{name:'Not now'}).isVisible(),true,'the preflight can be dismissed without starting');
   assert.equal(startedPapers.length,0,'the clock and practice API do not start before final confirmation');
@@ -128,7 +181,7 @@ try {
   assert.equal(startedPapers.length,0,'the optional warm-up stays local and untimed');
   await page.getByRole('button',{name:'Your paper'}).click();
   assert.equal(await page.locator('#practice-begin').isVisible(),true,'the begin action remains available after optional guidance');
-  await page.getByRole('button',{name:'Start 30-minute practice'}).click();
+  await page.getByRole('button',{name:'Start 15-minute practice'}).click();
   await page.locator('.practice-question-card').first().waitFor();
   const originalPaper=startedPapers[0].paper;
   assert.equal(await page.locator('.practice-question-card').count(),15,'all questions appear together');
@@ -139,6 +192,13 @@ try {
   assert.deepEqual(await page.locator('.practice-question-prompt').allInnerTexts(),originalPaper.questions.map(question=>question.prompt));
   assert.equal(await page.locator('#practice-progress').evaluate(progress=>progress.value),0);
   assert.equal(await page.locator('#practice-timer').count(),1);
+  assert.equal(await page.locator('#practice-timer').getAttribute('role'),'timer');
+  assert.equal(await page.locator('#practice-timer').getAttribute('aria-labelledby'),'practice-timer-label');
+  await page.locator('#practice-timer-status').waitFor();
+  assert.match(await page.locator('#practice-timer-status').textContent(),/Time remaining/);
+  await page.locator('#practice-jump').selectOption('2');
+  await page.waitForFunction(() => document.activeElement?.id === 'practice-prompt-3');
+  await page.locator('#practice-jump').selectOption('0');
   assert.equal(await page.locator('.portfolio-reference .practice-table tbody tr').count(),5,'monthly portfolio reference P&L is shown in Part 2');
   assert.deepEqual(await page.locator('.portfolio-reference .practice-table tbody tr td:last-child').allInnerTexts(),['€120,000','€78,000','€42,000','€18,000','€24,000']);
   assert.deepEqual(await page.locator('.portfolio-reference .viz-key-item').evaluateAll(items=>items.map(item=>({
@@ -156,10 +216,10 @@ try {
   assert.equal(await page.locator('.practice-question-card fieldset').count(),15,'answer options are grouped by question');
   assert.ok(await page.locator('#practice-submit').isDisabled());
 
-  for(const width of [320,390,1440]){
-    await page.setViewportSize({width,height:900});
+  for(const [width,height] of [[320,900],[390,900],[844,390],[1440,900]]){
+    await page.setViewportSize({width,height});
     const layout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,frames:[...document.querySelectorAll('.table-scroll')].map(frame=>({frame:frame.clientWidth,table:frame.querySelector('table').scrollWidth}))}));
-    assert.ok(layout.scroll<=layout.width,`paper has no page overflow at ${width}px: ${JSON.stringify(layout)}`);
+    assert.ok(layout.scroll<=layout.width,`paper has no page overflow at ${width}x${height}: ${JSON.stringify(layout)}`);
     if(width<560) assert.ok(layout.frames.some(frame=>frame.table>frame.frame),`wide financial tables scroll inside their frames at ${width}px`);
   }
   await page.emulateMedia({reducedMotion:'reduce'});
@@ -171,6 +231,9 @@ try {
   await page.locator('[data-practice-filter="answered"]').click();
   assert.equal(await page.locator('#practice-filter-empty').isVisible(),true,'an empty filter has a distinct message');
   await page.getByRole('button',{name:'Show all questions'}).click();
+  await page.locator('.practice-question-card input').first().focus();
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await page.locator('.practice-question-card').first().locator('input:checked').count(),1,'arrow keys move within a question');
   await page.setViewportSize({width:390,height:900});
   const first=originalPaper.questions[0];
   await choose(page,first,originalPaper.key[first.id],true);
@@ -220,7 +283,7 @@ try {
   const late=await context.newPage();
   await late.goto(origin+'/');
   await late.getByRole('button',{name:/Start practice assessment/}).click();
-  await late.getByRole('button',{name:'Start 30-minute practice'}).click();
+  await late.getByRole('button',{name:'Start 15-minute practice'}).click();
   await late.locator('.practice-question-card').first().waitFor();
   const latePaper=startedPapers.at(-1).paper;
   for(const question of latePaper.questions) await choose(late,question,latePaper.key[question.id]);

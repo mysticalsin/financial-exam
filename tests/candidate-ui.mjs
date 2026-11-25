@@ -187,6 +187,10 @@ try {
   await a.getByRole('button',{name:'Start assessment'}).click();
   try { await a.getByText('Candidate A private prompt 841').waitFor(); }
   catch (error) { console.error('Candidate A state:', await a.locator('body').innerText(), calls); throw error; }
+  assert.equal(await a.locator('#countdown').getAttribute('role'),'timer');
+  assert.equal(await a.locator('#countdown').getAttribute('aria-labelledby'),'countdown-label');
+  await a.locator('#choices input').first().focus();
+  assert.equal(await a.evaluate(() => document.activeElement?.closest('#choices') != null), true, 'a keyboard user can focus the answer group');
   assert.equal(startPayloads[0].copyShortcutReview,true,'start confirms the enabled setting shown in preflight');
   assert.equal(await a.locator('#active-question details.copy-shortcut-notice').getAttribute('open'),null,
     'the detailed active-question notice stays available but collapsed');
