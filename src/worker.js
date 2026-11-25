@@ -161,19 +161,27 @@ async function body(request, fields) {
   return data;
 }
 
-let anonymousSalt;
+// One shared salt so every isolate counts against the same limiter buckets.
+// A random per-isolate salt would shard the budget and defeat the limit.
+const RATE_SALT_FALLBACK = "mantu-financial-assessment-rate-v1";
+
+function limiterAddress(request) {
+  // Cloudflare overwrites this header at the edge. Collapse anything that is not one IP
+  // so a junk or comma-joined value cannot mint a fresh bucket per request.
+  const ip = (request.headers.get("CF-Connecting-IP") || "").split(",")[0].trim();
+  return /^[0-9A-Fa-f:.]+$/.test(ip) && ip.length <= 64 ? ip : "local";
+}
+
 async function throttle(request, env, operation, ref) {
   demand(env.RATE_LIMITER, 503, "The service is temporarily unavailable.");
   // Identity for a single minute only. Neither application logs nor the assessment store receive IP addresses.
   const minute = Math.floor(Date.now() / 60000);
-  const ip = request.headers.get("CF-Connecting-IP") || "local";
-  anonymousSalt ??= randomHex(32);
-  const salt = env.RATE_KEY || env.OPS_TOKEN || anonymousSalt;
-  const networkKey = await digest(JSON.stringify([salt, minute, ip, operation]));
+  const salt = env.RATE_KEY || env.OPS_TOKEN || RATE_SALT_FALLBACK;
+  const networkKey = await digest(JSON.stringify([salt, minute, limiterAddress(request), operation]));
   const network = await env.RATE_LIMITER.limit({ key: networkKey });
   demand(network.success, 429, "Too many requests. Please try again in a minute.");
   if (ref) {
-    const attemptKey = await digest(JSON.stringify([minute, operation, ref]));
+    const attemptKey = await digest(JSON.stringify([salt, minute, operation, ref]));
     const attempt = await env.RATE_LIMITER.limit({ key: attemptKey });
     demand(attempt.success, 429, "Too many requests. Please try again in a minute.");
   }
@@ -232,6 +240,10 @@ async function candidateRoute(request, env, url, settings) {
   const path = url.pathname;
   if (path === "/api/config" && request.method === "GET") return json(settings);
   if (path === "/api/session" && request.method === "GET") {
+    // A live anonymous probe, and any request that already carries a session cookie, spends the
+    // same limiter budget as a real read. Closed mode with no cookie stays a cheap empty response.
+    if (env.RATE_LIMITER && (settings.enabled || session))
+      await throttle(request, env, "session", session?.[1]);
     const expected = request.headers.get("X-Assessment-Reference");
     if (!settings.enabled || !session) return json({ attempt: null, serverNow: Date.now() });
     demand(typeof expected === "string" && /^[0-9a-f]{32}$/.test(expected), 400,
@@ -279,9 +291,12 @@ async function candidateRoute(request, env, url, settings) {
   };
   const action = actions[request.method + " " + path];
   demand(action, 404, "Route not found.");
-  demand(session, 401, "Your session is unavailable. Please reopen your invitation.");
   const [name, fields] = action;
-  await throttle(request, env, name === "integrity" ? "copy-shortcut" : "session", session[1]);
+  // Session reads were already counted above. Count every other candidate call before the cookie check
+  // so a missing cookie cannot skip the limiter.
+  if (!(path === "/api/session" && request.method === "GET"))
+    await throttle(request, env, name === "integrity" ? "copy-shortcut" : "session", session?.[1]);
+  demand(session, 401, "Your session is unavailable. Please reopen your invitation.");
   const data = fields.length ? await body(request, fields) : {};
   if (name !== "view")
     demand(data.reference === session[1], 409, "The active invitation changed. Reopen your invitation to continue.");
@@ -541,6 +556,9 @@ export class Assessment {
     if (action === "view") return json(view(record, now));
     if (action === "submit" && record.status === "submitted") return json(view(record, now));
     demand(record.status === "active", 409, "This assessment has closed.");
+    // Re-read the clock at the mutation, not the earlier snapshot. The captured `now` can sit
+    // a few milliseconds before this point; an equal or past deadline must not accept a write.
+    demand(record.deadline > Date.now(), 409, "This assessment has closed.");
     if (action === "integrity") {
       if (record.notice.integrityReview === true) {
         demand(CLIENT_OBSERVATIONS.includes(data.kind), 422, "Choose an available observation category.");
