@@ -1,5 +1,5 @@
 const TOKEN_VERSION = 'p1';
-const TICKET_LIFETIME = 30 * 60 * 1000;
+const TICKET_LIFETIME = 15 * 60 * 1000;
 const MAX_BODY_BYTES = 32 * 1024;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

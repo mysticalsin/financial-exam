@@ -371,7 +371,7 @@ function landing(focus = false) {
   const beforeCopy = $("landing").querySelector(".studio-before-copy");
   if (beforeCopy) beforeCopy.textContent = recruitmentLink
     ? `This invitation contains 15 questions. Your time allowance is confirmed below before you start. You may use a calculator and review every answer before submitting.`
-    : "Two parts move from financial foundations to portfolio decisions. Allow 30 minutes, use a calculator if helpful, and review every answer before you submit.";
+    : "Two parts move from financial foundations to portfolio decisions. Allow 15 minutes, use a calculator if helpful, and review every answer before you submit.";
   const beforePrivacy = $("landing").querySelector(".studio-before-privacy");
   if (beforePrivacy) beforePrivacy.textContent = recruitmentLink
     ? "Recruitment answers are handled under the country notice shown before start. Your invitation has its own time allowance and retention period. The service also receives technical request metadata to deliver and protect the site."
@@ -380,7 +380,7 @@ function landing(focus = false) {
   if (recruitmentLink) scope.textContent = invitation?.durationMinutes
     ? `15 questions · ${invitation.durationMinutes} minutes`
     : "Personal invitation · time allowance confirmed before start";
-  else scope.textContent = "15 questions · 30 minutes";
+  else scope.textContent = "15 questions · 15 minutes";
   const trigger = $("landing-action");
   trigger.className = "button primary start-practice";
   const canStart = Boolean(invite && config?.enabled && invitation);

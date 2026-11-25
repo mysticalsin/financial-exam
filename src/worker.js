@@ -85,7 +85,7 @@ function profiles(env) {
 function config(env) {
   const approved = profiles(env);
   const countries = Object.keys(approved).sort();
-  const durationMinutes = Number(env.DURATION_MINUTES ?? 30);
+  const durationMinutes = Number(env.DURATION_MINUTES ?? 15);
   const inviteTtlMinutes = Number(env.INVITE_TTL_MINUTES ?? 30);
   const enabled = env.LIVE_ENABLED === "true" && countries.length > 0 &&
     reviewerConfigured(env) &&

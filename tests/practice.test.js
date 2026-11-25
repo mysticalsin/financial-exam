@@ -148,7 +148,7 @@ test('practice route is separate, stateless, same-origin, capped and uses opaque
   assert.equal(started.headers.has('Set-Cookie'), false);
   const first = await started.json();
   assert.equal(first.questions.length, 15);
-  assert.equal(first.deadline - first.serverNow, 30 * 60 * 1000);
+  assert.equal(first.deadline - first.serverNow, 15 * 60 * 1000);
   assert.match(first.challenge, /^p1\.[A-Za-z\d_-]+$/);
   assert.equal(first.challenge.includes(first.questions[0].id), false, 'ticket is encrypted, not readable JSON');
   assert.equal(Object.keys(first).sort().join(','), 'challenge,deadline,questions,referenceTable,serverNow');
