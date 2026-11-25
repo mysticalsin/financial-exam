@@ -17,6 +17,7 @@ let submissionPending = false;
 let activeFilter = "all";
 let currentQuestionIndex = 0;
 let stickyQuestionIndex = -1;
+let practiceTimerCue = "";
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -65,7 +66,11 @@ function showHome() {
   $("outline").hidden = false;
   document.body.classList.remove("practice-active");
   clearStatus();
-  $("landing-title").focus?.({ preventScroll: true });
+  const title = $("landing-title");
+  if (title) {
+    title.tabIndex = -1;
+    title.focus({ preventScroll: true });
+  }
 }
 function clearPractice() {
   requestVersion++;
@@ -83,6 +88,7 @@ function clearPractice() {
   activeFilter = "all";
   currentQuestionIndex = 0;
   stickyQuestionIndex = -1;
+  practiceTimerCue = "";
   if (dialog.open) dialog.close();
   $("dialog-body").replaceChildren();
 }
@@ -277,10 +283,30 @@ function progressHeader() {
 }
 function timerRow() {
   const row = el("div", "practice-timer-row");
-  row.append(el("span", "", "Time remaining"));
-  const time = el("time", "practice-timer", "15:00"); time.id = "practice-timer"; time.setAttribute("role", "timer");
-  row.append(time, el("span", "timer-note", "Answers stay in this tab until you submit"));
+  const label = el("span", "timer-label", "Time remaining");
+  label.id = "practice-timer-label";
+  const time = el("time", "practice-timer", "15:00");
+  time.id = "practice-timer";
+  time.setAttribute("role", "timer");
+  time.setAttribute("aria-labelledby", label.id);
+  const status = el("span", "visually-hidden");
+  status.id = "practice-timer-status";
+  status.setAttribute("aria-live", "polite");
+  status.setAttribute("aria-atomic", "true");
+  row.append(label, time, el("span", "timer-note", "Answers stay in this tab until you submit"), status);
   return row;
+}
+function cuePracticeTimer(seconds) {
+  const status = $("practice-timer-status");
+  if (!status) return;
+  const clock = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  let cue = "";
+  if (seconds <= 0) cue = "Practice time has ended.";
+  else if (seconds <= 120) cue = `Two minutes or less remain. ${clock} left.`;
+  else if (!practiceTimerCue) cue = `Time remaining ${clock}.`;
+  if (!cue || cue === practiceTimerCue) return;
+  practiceTimerCue = cue;
+  status.textContent = cue;
 }
 function updateProgress() {
   const count = answeredCount();
@@ -305,6 +331,7 @@ function renderQuestion(question, index) {
   body.append(el("p", "question-section", index < 8 ? "FOUNDATIONS" : "APPLIED READING"));
   const title = el("h3", "practice-question-prompt", question.prompt);
   title.id = `practice-prompt-${index + 1}`;
+  title.tabIndex = -1;
   body.append(title);
   if (question.usesReferenceTable && referenceTable) {
     const cue = el("a", "reference-cue", "View the monthly portfolio P&L");
@@ -381,7 +408,11 @@ function updateQuestionNavigation() {
   const reference = $("practice-reference-table");
   if (reference) reference.hidden = !(activeFilter === "all" || shown.some((index) => index >= 8 && index <= 12));
   const empty = $("practice-filter-empty");
-  if (empty) empty.hidden = shown.length > 0;
+  if (empty) {
+    empty.hidden = shown.length > 0;
+    const message = empty.querySelector("span");
+    if (shown.length === 0 && message) message.textContent = "No questions in this filter.";
+  }
   const navCount = $("practice-nav-count");
   if (navCount) navCount.textContent = `${count} of ${questions.length} answered`;
 }
@@ -424,7 +455,7 @@ function practiceNavigation() {
     list.append(item);
   });
   nav.append(list);
-  const empty = el("p", "practice-filter-empty"); empty.id = "practice-filter-empty"; empty.hidden = true;
+  const empty = el("p", "practice-filter-empty"); empty.id = "practice-filter-empty"; empty.hidden = true; empty.setAttribute("role", "status");
   empty.append(el("span", "", "No questions in this filter."), button("Show all questions", "text-action", () => { activeFilter = "all"; stickyQuestionIndex = -1; updateQuestionNavigation(); }));
   nav.append(empty);
   return nav;
@@ -520,16 +551,27 @@ function renderResult() {
   card.setAttribute("aria-labelledby", "practice-results-heading");
   const top = el("header", "result-header");
   top.append(el("p", "eyebrow", "PRIVATE PRACTICE FEEDBACK"));
-  const heading = el("h1", "", "Your practice result"); heading.id = "practice-results-heading";
+  const heading = el("h1", "", "Your practice result");
+  heading.id = "practice-results-heading";
+  heading.tabIndex = -1;
   top.append(heading);
   const layout = el("div", "result-dashboard");
   const scorePanel = el("section", "result-score-panel"); scorePanel.setAttribute("aria-label", "Your practice score");
-  const circle = el("div", "score-circle"); circle.setAttribute("role", "img"); circle.setAttribute("aria-label", `${score} out of ${total}; ${bandFor(score)}`);
+  const activeBand = bandFor(score);
+  const circle = el("div", "score-circle");
+  circle.id = "practice-score-figure";
+  circle.setAttribute("role", "img");
+  circle.setAttribute("aria-label", `${score} out of ${total}, ${activeBand} band`);
+  heading.setAttribute("aria-describedby", circle.id);
   const scoreText = el("strong", "score-value", String(score));
-  circle.append(scoreText, el("span", "score-divider", "/"), el("span", "score-total", String(total)));
+  const divider = el("span", "score-divider", "/");
+  const scoreTotal = el("span", "score-total", String(total));
+  scoreText.setAttribute("aria-hidden", "true");
+  divider.setAttribute("aria-hidden", "true");
+  scoreTotal.setAttribute("aria-hidden", "true");
+  circle.append(scoreText, divider, scoreTotal);
   circle.style.setProperty("--score-ratio", `${score / total}`);
   circle.style.setProperty("--score-turn", `${score / total * 360}deg`);
-  const activeBand = bandFor(score);
   const band = el("p", "result-band", activeBand); band.setAttribute("aria-live", "polite");
   const answered = el("p", "result-answered", `${resultAnswered} of ${total} answered`);
   scorePanel.append(circle, band, answered);
@@ -542,10 +584,15 @@ function renderResult() {
   }[activeBand];
   detailPanel.append(el("p", "result-reflection", reflection));
   const bands = el("div", "score-bands");
+  bands.setAttribute("role", "list");
+  bands.setAttribute("aria-label", "Score bands");
   [["Excellent", "13–15"], ["Good", "10–12"], ["Average", "7–9"], ["Insufficient", "0–6"]].forEach(([name, range]) => {
-    const item = el("div", "score-band"); item.dataset.scoreBand = name.toLowerCase();
+    const item = el("div", "score-band");
+    item.dataset.scoreBand = name.toLowerCase();
+    item.setAttribute("role", "listitem");
     if (name === activeBand) { item.classList.add("is-active"); item.setAttribute("aria-current", "true"); }
-    item.append(el("strong", "", name), el("span", "", range)); bands.append(item);
+    item.append(el("strong", "", name), el("span", "", range));
+    bands.append(item);
   });
   detailPanel.append(bands);
   layout.append(scorePanel, detailPanel);
@@ -561,6 +608,7 @@ function expirePractice() {
   clearPractice(); phase = "expired"; showWorkspace();
   const card = el("section", "practice-expired");
   const heading = el("h1", "", "Practice time ended");
+  heading.tabIndex = -1;
   card.append(heading, el("p", "body-copy", "Your answers and practice challenge have been cleared. Start a new practice assessment whenever you are ready."), button("Start a new practice assessment", "button primary", start), button("Back to overview", "button secondary", () => { phase = "idle"; showHome(); }));
   panel.replaceChildren(card); heading.focus({ preventScroll: true });
 }
@@ -568,13 +616,21 @@ function updateClock() {
   if ((phase === "paper" || phase === "submitting") && clockBase && serverTime() >= deadline) { expirePractice(); return; }
   if (phase === "result" && resultUntil && serverTime() >= resultUntil) {
     clearPractice(); phase = "expired"; showWorkspace();
-    panel.replaceChildren(el("section", "practice-expired", "Your practice score has been cleared."), button("Start a new practice assessment", "button primary", start)); return;
+    const cleared = el("section", "practice-expired");
+    cleared.setAttribute("role", "status");
+    const clearedHeading = el("h1", "", "Practice score cleared");
+    clearedHeading.tabIndex = -1;
+    cleared.append(clearedHeading, el("p", "body-copy", "Your practice score has been cleared."), button("Start a new practice assessment", "button primary", start));
+    panel.replaceChildren(cleared);
+    clearedHeading.focus({ preventScroll: true });
+    return;
   }
   const timer = $("practice-timer");
-  if (timer && clockBase && deadline) {
+  if (timer && clockBase && deadline && phase === "paper") {
     const seconds = remainingSeconds();
     timer.textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
     timer.classList.toggle("ending", seconds <= 120);
+    cuePracticeTimer(seconds);
   }
 }
 window.addEventListener("assessment:practice-start", showPreflight);

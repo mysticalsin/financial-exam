@@ -18,6 +18,7 @@ let submitting = false;
 let startPending = false;
 let claimExpiry = 0;
 let deadlineCheck = false;
+let candidateTimerCue = "";
 let bannerOnError = "";
 let bootstrapVersion = 0;
 let candidateEpoch = 0;
@@ -236,6 +237,7 @@ function clearCandidateState(message, { broadcast = false } = {}) {
   submitting = false;
   startPending = false;
   deadlineCheck = false;
+  candidateTimerCue = "";
   invite = "";
   explicitInvitation = false;
   if (dialog.open) dialog.close();
@@ -406,9 +408,11 @@ function landing(focus = false) {
     sampleAction.hidden = canStart || waiting;
     sampleAction.onclick = sample;
   }
-  const minutes = invitation?.durationMinutes ?? config?.durationMinutes;
-  $("hero-time").hidden = !Number.isFinite(minutes) || (invite && !invitation);
-  if (!$("hero-time").hidden) $("hero-time").textContent = minutes + " min";
+  const heroTime = $("hero-time");
+  if (heroTime) {
+    heroTime.hidden = true;
+    heroTime.textContent = "";
+  }
   $("hero-hint").textContent = canStart
     ? "Your timer starts when you confirm on the next screen."
     : recruitmentLink
@@ -630,6 +634,18 @@ function countAnswers() {
 function timeLeft() {
   return Math.max(0, Math.ceil((attempt.deadline - serverTime()) / 1000));
 }
+function cueCandidateTimer(seconds) {
+  const status = $("countdown-status");
+  if (!status) return;
+  const clock = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  let cue = "";
+  if (seconds <= 0) cue = "Time has ended.";
+  else if (seconds <= 120) cue = `Two minutes or less remain. ${clock} left.`;
+  else if (!candidateTimerCue) cue = `Time left ${clock}.`;
+  if (!cue || cue === candidateTimerCue) return;
+  candidateTimerCue = cue;
+  status.textContent = cue;
+}
 function updateClock() {
   if (claim && claimExpiry && Date.now() >= claimExpiry) clearClaim();
   if (
@@ -667,6 +683,7 @@ function updateClock() {
       ":" +
       String(seconds % 60).padStart(2, "0");
     clock.parentElement.classList.toggle("ending", seconds <= 120);
+    cueCandidateTimer(seconds);
   }
   if (seconds === 0 && !deadlineCheck) expireView();
 }
@@ -684,11 +701,18 @@ function rail() {
   progress.max = attempt.questions.length;
   progress.value = countAnswers();
   progress.setAttribute("aria-label", "Questions answered");
-  const timer = el("p", "clock", "Time left ");
+  const timer = el("p", "clock");
+  const timerLabel = el("span", "", "Time left");
+  timerLabel.id = "countdown-label";
   const time = el("span");
   time.id = "countdown";
   time.setAttribute("role", "timer");
-  timer.append(time);
+  time.setAttribute("aria-labelledby", "countdown-label");
+  const timerStatus = el("span", "visually-hidden");
+  timerStatus.id = "countdown-status";
+  timerStatus.setAttribute("aria-live", "polite");
+  timerStatus.setAttribute("aria-atomic", "true");
+  timer.append(timerLabel, document.createTextNode(" "), time, timerStatus);
   const link = button(
     view === "review" ? "Return to question" : "Review answers",
     "text-action",
